@@ -7,8 +7,7 @@
 
   window.__TONEST_BOARD_MENU_INIT__ = true;
 
-  const BUILD =
-    "20261002-admin-access-v3";
+  const BUILD = "20261002-coupang-camp-v4";
 
   const PAGES = [
     {
@@ -24,10 +23,16 @@
       desc:"인사 · 운영 기본정보"
     },
     {
+      key:"coupang_camp",
+      label:"쿠팡 캠프 조회",
+      path:"/coupang_camp",
+      desc:"공용 캠프 · 본캠프 · 수신 SH · 채번 링크 관리"
+    },
+    {
       key:"admin_access",
       label:"계정 · 권한 관리",
       path:"/admin_access",
-      desc:"가입 승인 · 역할 · 메일 인증 · 최고관리자 전용",
+      desc:"가입 승인 · 역할 · 메일 인증 관리",
       restricted:true
     }
   ];
@@ -45,15 +50,14 @@
       String(path || "/")
         .replace(/[?#].*$/,"");
 
-    if(!value.startsWith("/")){
-      value =
-        "/" + value;
+    if (!value.startsWith("/")) {
+      value = "/" + value;
     }
 
-    if(
+    if (
       value.length > 1 &&
       value.endsWith("/")
-    ){
+    ) {
       value =
         value.slice(0,-1);
     }
@@ -64,12 +68,12 @@
   const currentPath =
     norm(location.pathname);
 
-  function installStyles(){
-    if(
+  function installStyles() {
+    if (
       document.getElementById(
         "tn-board-menu-style"
       )
-    ){
+    ) {
       return;
     }
 
@@ -98,7 +102,7 @@
         top:14px;
         left:14px;
         z-index:99991;
-        width:min(390px,calc(100vw - 28px));
+        width:min(400px,calc(100vw - 28px));
         max-height:calc(100vh - 28px);
         overflow:auto;
         display:none;
@@ -142,7 +146,7 @@
         min-width:0;
         flex:1;
         font-size:15px;
-        font-weight:850;
+        font-weight:900;
         letter-spacing:-.02em;
       }
 
@@ -150,7 +154,7 @@
         margin-top:2px;
         color:#a8babc;
         font-size:10px;
-        font-weight:650;
+        font-weight:700;
       }
 
       .tn-menu-close{
@@ -160,7 +164,7 @@
         border:1px solid rgba(255,255,255,.14);
         background:rgba(255,255,255,.06);
         color:#fff;
-        font-weight:800;
+        font-weight:850;
         cursor:pointer;
       }
 
@@ -178,11 +182,15 @@
         background:rgba(255,255,255,.04);
         color:#fff;
         text-decoration:none;
-        transition:background .15s,border-color .15s;
+        transition:
+          background .15s,
+          border-color .15s,
+          transform .15s;
       }
 
       .tn-menu-item:hover,
       .tn-menu-item.current{
+        transform:translateY(-1px);
         border-color:rgba(45,212,191,.55);
         background:rgba(20,184,166,.14);
       }
@@ -206,7 +214,7 @@
 
       .tn-menu-item-title{
         font-size:14px;
-        font-weight:850;
+        font-weight:900;
       }
 
       .tn-menu-admin-badge{
@@ -228,6 +236,7 @@
         color:#b7c8ca;
         font-size:11px;
         line-height:1.45;
+        font-weight:650;
       }
 
       @media(max-width:640px){
@@ -241,12 +250,10 @@
       }
     `;
 
-    document.head.appendChild(
-      style
-    );
+    document.head.appendChild(style);
   }
 
-  function init(){
+  function init() {
     console.info(
       "[TO:NEST board-menu]",
       BUILD
@@ -270,7 +277,7 @@
       <div class="tn-menu-head">
         <div class="tn-menu-brand">
           <img
-            src="/favicon.ico?v=8"
+            src="/favicon.ico?v=9"
             alt="TO:NEST"
           >
         </div>
@@ -332,23 +339,13 @@
     );
 
     const close = () => {
-      backdrop
-        .classList
-        .remove("open");
-
-      panel
-        .classList
-        .remove("open");
+      backdrop.classList.remove("open");
+      panel.classList.remove("open");
     };
 
     const open = () => {
-      backdrop
-        .classList
-        .add("open");
-
-      panel
-        .classList
-        .add("open");
+      backdrop.classList.add("open");
+      panel.classList.add("open");
     };
 
     backdrop.addEventListener(
@@ -357,9 +354,7 @@
     );
 
     panel
-      .querySelector(
-        ".tn-menu-close"
-      )
+      .querySelector(".tn-menu-close")
       .addEventListener(
         "click",
         close
@@ -368,7 +363,7 @@
     document.addEventListener(
       "keydown",
       event => {
-        if(event.key === "Escape"){
+        if (event.key === "Escape") {
           close();
         }
       }
@@ -379,7 +374,7 @@
         "tnBoardMenuToggle"
       );
 
-    if(toggle){
+    if (toggle) {
       toggle.addEventListener(
         "click",
         event => {
@@ -390,15 +385,15 @@
     }
   }
 
-  if(
+  if (
     document.readyState === "loading"
-  ){
+  ) {
     document.addEventListener(
       "DOMContentLoaded",
       init,
       {once:true}
     );
-  }else{
+  } else {
     init();
   }
 })();
