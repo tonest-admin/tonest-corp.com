@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
   <title>TO:NEST 회원가입</title>
   <meta name="theme-color" content="#16a7a4">
-  <link rel="icon" href="./favicon.ico" type="image/x-icon">
-  <link rel="shortcut icon" href="./favicon.ico" type="image/x-icon">
-  <style>
+  <link rel="icon" href="/favicon.ico?v=3" type="image/x-icon">
+  <link rel="shortcut icon" href="/favicon.ico?v=3" type="image/x-icon">
+<style>
     :root{
       --bg:#f6f9f8;--card:#fff;--line:#dfe8e6;--line2:#edf3f2;
       --text:#172124;--muted:#708083;--primary:#16a7a4;--primary2:#118b89;
@@ -82,7 +82,7 @@
 <div class="wrap">
   <main class="stack">
     <section class="logo-panel" aria-label="TO:NEST">
-      <img class="brand-logo-img" src="./logo.png" alt="TO:NEST">
+      <img class="brand-logo-img" src="/logo.png" alt="TO:NEST">
     </section>
 
     <section class="card">
@@ -108,7 +108,7 @@
         <input id="passwordConfirm" type="password" placeholder="비밀번호 다시 입력" autocomplete="new-password">
 
         <button class="btn" id="submitBtn" type="submit">가입하기</button>
-        <a class="btn secondary" href="./">로그인으로 돌아가기</a>
+        <a class="btn secondary" href="/">로그인으로 돌아가기</a>
 
         <div class="status" id="status" aria-live="polite"></div>
       </form>
@@ -120,7 +120,7 @@
 
 <script>
 (() => {
-  const AUTH_WORKER_URL = "https://login.tonest-admin.workers.dev";
+  const AUTH_WORKER_URL = "";
 
   const form = document.getElementById("signupForm");
   const displayName = document.getElementById("displayName");
