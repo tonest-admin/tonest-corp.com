@@ -1,0 +1,3080 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <style>html{visibility:hidden}</style>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="referrer" content="origin">
+
+  <title>쿠팡 캠프 지도 | TO:NEST</title>
+
+  <link rel="icon" type="image/x-icon" href="/favicon.ico?v=10">
+  <link rel="shortcut icon" type="image/x-icon" href="/favicon.ico?v=10">
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <!-- Kakao Maps JavaScript SDK key: browser map rendering / services -->
+  <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=add4ce93b38c0ff9d9b9053728e067b3&autoload=false&libraries=clusterer,services"></script>
+
+  <script src="/board-menu.js?v=4" defer></script>
+
+  <style>
+    :root{
+      --bg:#eef6f4;
+      --card:#fff;
+      --line:#cfddda;
+      --line2:#bccbc8;
+      --text:#111b1d;
+      --muted:#405452;
+      --primary:#16a7a4;
+      --primary2:#118b89;
+      --primary-soft:#eaf8f6;
+      --green:#15803d;
+      --green-soft:#effcf3;
+      --red:#dc2626;
+      --red-soft:#fff2f2;
+      --amber:#a16207;
+      --amber-soft:#fff9e8;
+      --blue:#2563eb;
+      --blue-soft:#eff6ff;
+      --shadow:0 14px 36px rgba(15,45,47,.09);
+      --font:"Pretendard Variable","Pretendard","Segoe UI","Noto Sans KR",system-ui,-apple-system,sans-serif;
+    }
+
+    *{box-sizing:border-box}
+
+    html,body{
+      width:100%;
+      height:100%;
+      margin:0;
+      font-family:var(--font);
+      color:var(--text);
+      background:var(--bg);
+      -webkit-font-smoothing:auto;
+      text-rendering:auto;
+    }
+
+    body{
+      overflow:hidden;
+    }
+
+    button,input,select{
+      font:inherit;
+      opacity:1;
+      -webkit-font-smoothing:auto;
+      text-rendering:auto;
+    }
+
+    button{cursor:pointer}
+
+    .app{
+      width:100%;
+      height:100dvh;
+      display:grid;
+      grid-template-rows:62px minmax(0,1fr);
+    }
+
+    .topbar{
+      display:flex;
+      align-items:center;
+      gap:10px;
+      padding:8px 12px;
+      border-bottom:1px solid var(--line);
+      background:rgba(255,255,255,.98);
+      box-shadow:0 6px 22px rgba(15,45,47,.06);
+      z-index:30;
+    }
+
+    .menuBtn{
+      width:42px;
+      height:42px;
+      flex:0 0 42px;
+      display:grid;
+      place-items:center;
+      border:0;
+      border-radius:12px;
+      background:#fff;
+    }
+
+    .menuBtn:hover{
+      background:var(--primary-soft);
+    }
+
+    .menuBtn img{
+      width:36px;
+      height:36px;
+      object-fit:contain;
+      display:block;
+    }
+
+    .titleBox{
+      min-width:0;
+      display:flex;
+      flex-direction:column;
+      gap:2px;
+    }
+
+    .title{
+      font-size:21px;
+      line-height:1.05;
+      font-weight:950;
+      letter-spacing:-.035em;
+    }
+
+    .subtitle{
+      color:var(--muted);
+      font-size:12px;
+      line-height:1.35;
+      font-weight:800;
+    }
+
+    .spacer{flex:1}
+
+    .accessPill{
+      min-height:34px;
+      display:inline-flex;
+      align-items:center;
+      padding:0 11px;
+      border:1px solid var(--line2);
+      border-radius:999px;
+      background:#f8fbfa;
+      color:#304744;
+      font-size:12px;
+      font-weight:850;
+      white-space:nowrap;
+    }
+
+    .btn{
+      min-height:36px;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      padding:0 13px;
+      border:1px solid #c3d1cf;
+      border-radius:11px;
+      background:#fff;
+      color:#263c39;
+      font-size:12px;
+      font-weight:900;
+      text-decoration:none;
+      white-space:nowrap;
+    }
+
+    .btn:hover{
+      border-color:#8ccdc7;
+      background:#f8fdfc;
+    }
+
+    .btn.primary{
+      color:#fff;
+      border-color:var(--primary);
+      background:linear-gradient(180deg,#22b7b2,#16a7a4);
+    }
+
+    .btn.blue{
+      color:var(--blue);
+      border-color:#bfdbfe;
+      background:var(--blue-soft);
+    }
+
+    .btn.active{
+      color:#fff;
+      border-color:var(--primary);
+      background:var(--primary);
+    }
+
+    .work{
+      position:relative;
+      min-height:0;
+      display:grid;
+      grid-template-columns:400px minmax(0,1fr);
+      transition:grid-template-columns .2s ease;
+    }
+
+    .work.sideCollapsed{
+      grid-template-columns:0 minmax(0,1fr);
+    }
+
+    .side{
+      min-width:0;
+      min-height:0;
+      overflow:auto;
+      border-right:1px solid var(--line);
+      background:#f7fbfa;
+      z-index:20;
+      transition:opacity .16s ease;
+    }
+
+    .work.sideCollapsed .side{
+      width:0;
+      opacity:0;
+      overflow:hidden;
+      pointer-events:none;
+      border-right:0;
+    }
+
+    .inner{
+      padding:11px;
+    }
+
+    .card{
+      margin-bottom:10px;
+      padding:13px;
+      border:1px solid var(--line);
+      border-radius:16px;
+      background:#fff;
+      box-shadow:0 7px 20px rgba(15,45,47,.05);
+    }
+
+    .head{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:9px;
+      margin-bottom:10px;
+    }
+
+    .head b{
+      font-size:14px;
+      font-weight:950;
+    }
+
+    .head span{
+      color:var(--muted);
+      font-size:10.5px;
+      font-weight:750;
+    }
+
+    .field{
+      display:grid;
+      gap:6px;
+      margin-top:9px;
+    }
+
+    .field label{
+      color:#344b48;
+      font-size:11px;
+      font-weight:850;
+    }
+
+    .control{
+      width:100%;
+      height:39px;
+      padding:0 10px;
+      border:1px solid #c3d1cf;
+      border-radius:11px;
+      background:#f8fbfa;
+      color:#182a28;
+      outline:0;
+      font-size:12px;
+      font-weight:750;
+    }
+
+    .control:focus{
+      border-color:#5fc1ba;
+      background:#fff;
+      box-shadow:0 0 0 3px rgba(22,167,164,.1);
+    }
+
+    .cols{
+      display:grid;
+      grid-template-columns:1fr 1fr;
+      gap:8px;
+    }
+
+    .actions{
+      display:flex;
+      gap:7px;
+      margin-top:10px;
+    }
+
+    .actions>*{
+      flex:1;
+    }
+
+    .stats{
+      display:grid;
+      grid-template-columns:repeat(3,1fr);
+      gap:7px;
+    }
+
+    .stat{
+      padding:9px 5px;
+      border:1px solid var(--line);
+      border-radius:12px;
+      background:#f8fbfa;
+      text-align:center;
+    }
+
+    .stat strong{
+      display:block;
+      font-size:18px;
+      font-weight:950;
+    }
+
+    .stat span{
+      display:block;
+      margin-top:4px;
+      color:var(--muted);
+      font-size:10px;
+      font-weight:750;
+    }
+
+    .chips{
+      display:flex;
+      flex-wrap:wrap;
+      gap:6px;
+    }
+
+    .chip{
+      min-height:29px;
+      padding:0 9px;
+      border:1px solid var(--line);
+      border-radius:999px;
+      background:#fff;
+      color:#314743;
+      font-size:10.5px;
+      font-weight:850;
+    }
+
+    .chip.active{
+      color:var(--primary2);
+      border-color:#87cec8;
+      background:var(--primary-soft);
+    }
+
+    .dot{
+      display:inline-block;
+      width:9px;
+      height:9px;
+      margin-right:6px;
+      border-radius:50%;
+      vertical-align:0;
+    }
+
+    .list{
+      display:grid;
+      gap:6px;
+      max-height:34vh;
+      overflow:auto;
+    }
+
+    .item{
+      width:100%;
+      padding:10px 10px;
+      border:1px solid var(--line);
+      border-radius:12px;
+      background:#fff;
+      color:var(--text);
+      text-align:left;
+    }
+
+    .item:hover,
+    .item.active{
+      border-color:#70c7c0;
+      background:#f1fbf9;
+    }
+
+    .item strong{
+      display:block;
+      font-size:12.5px;
+      font-weight:900;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      white-space:nowrap;
+    }
+
+    .item span{
+      display:block;
+      margin-top:4px;
+      color:var(--muted);
+      font-size:10.5px;
+      font-weight:700;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      white-space:nowrap;
+    }
+
+    .empty{
+      padding:17px 9px;
+      border:1px dashed #c4d3d0;
+      border-radius:12px;
+      color:#516562;
+      font-size:11px;
+      font-weight:750;
+      text-align:center;
+    }
+
+    .detail{
+      display:none;
+    }
+
+    .detail.show{
+      display:block;
+    }
+
+    .detail h3{
+      margin:0;
+      font-size:16px;
+      font-weight:950;
+    }
+
+    .detail p{
+      margin:5px 0 0;
+      color:var(--muted);
+      font-size:11px;
+      font-weight:750;
+    }
+
+    .rows{
+      display:grid;
+      gap:6px;
+      margin-top:11px;
+    }
+
+    .row{
+      display:grid;
+      grid-template-columns:66px minmax(0,1fr);
+      gap:8px;
+      font-size:11.5px;
+      line-height:1.5;
+      word-break:break-word;
+    }
+
+    .row b{
+      color:#4a605d;
+      font-weight:850;
+    }
+
+    .row span{
+      color:#152724;
+      font-weight:750;
+    }
+
+    .mapPane{
+      position:relative;
+      min-width:0;
+      min-height:0;
+    }
+
+    #map{
+      position:absolute;
+      inset:0;
+      background:#e8f1ef;
+    }
+
+    .sideToggle{
+      position:absolute;
+      top:12px;
+      left:12px;
+      z-index:18;
+      width:38px;
+      min-width:38px;
+      padding:0;
+      border-radius:11px;
+      box-shadow:0 9px 26px rgba(15,45,47,.18);
+    }
+
+    .tools{
+      position:absolute;
+      top:12px;
+      right:12px;
+      z-index:18;
+      display:flex;
+      gap:7px;
+    }
+
+    .tools .btn{
+      box-shadow:0 9px 26px rgba(15,45,47,.15);
+    }
+
+    .toast{
+      position:absolute;
+      left:50%;
+      bottom:18px;
+      z-index:40;
+      max-width:calc(100vw - 34px);
+      padding:10px 14px;
+      border-radius:999px;
+      background:rgba(17,27,29,.92);
+      color:#fff;
+      font-size:11px;
+      font-weight:850;
+      text-align:center;
+      opacity:0;
+      pointer-events:none;
+      transform:translate(-50%,10px);
+      transition:.18s;
+    }
+
+    .toast.show{
+      opacity:1;
+      transform:translate(-50%,0);
+    }
+
+    .toast.err{
+      background:rgba(185,28,28,.94);
+    }
+
+    .loading{
+      position:absolute;
+      inset:0;
+      z-index:25;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      background:rgba(238,246,244,.86);
+    }
+
+    .loading.hide{
+      display:none;
+    }
+
+    .loading div{
+      padding:15px 18px;
+      border:1px solid var(--line);
+      border-radius:15px;
+      background:#fff;
+      color:#203532;
+      font-size:12px;
+      font-weight:900;
+      box-shadow:0 12px 34px rgba(15,45,47,.12);
+    }
+
+    .label{
+      position:relative;
+      min-width:68px;
+      max-width:180px;
+      padding:5px 7px;
+      border:1px solid rgba(15,45,47,.15);
+      border-radius:9px;
+      background:rgba(255,255,255,.95);
+      color:#142724;
+      box-shadow:0 4px 12px rgba(15,45,47,.12);
+      font-size:9.5px;
+      font-weight:900;
+      line-height:1.2;
+      text-align:center;
+      white-space:nowrap;
+      pointer-events:none;
+      transform:translateY(-23px);
+    }
+
+    .routeInfo{
+      min-width:240px;
+      max-width:310px;
+      padding:12px 13px;
+      border:1px solid rgba(15,45,47,.14);
+      border-radius:13px;
+      background:#fff;
+      box-shadow:0 14px 34px rgba(15,45,47,.2);
+      transform:translateY(-7px);
+    }
+
+    .routeInfo strong{
+      display:block;
+      font-size:12.5px;
+      font-weight:950;
+      line-height:1.4;
+    }
+
+    .routeInfo .routeRow{
+      display:flex;
+      align-items:baseline;
+      justify-content:space-between;
+      gap:12px;
+      margin-top:6px;
+    }
+
+    .routeInfo .routeKey{
+      color:#526663;
+      font-size:10.5px;
+      font-weight:800;
+    }
+
+    .routeInfo .routeVal{
+      color:#132522;
+      font-size:11.5px;
+      font-weight:950;
+      text-align:right;
+    }
+
+    .routeInfo .routeTime{
+      margin-top:8px;
+      padding-top:7px;
+      border-top:1px solid #e1e9e7;
+      color:#71827f;
+      font-size:9.5px;
+      font-weight:700;
+    }
+
+    .missingList{
+      display:grid;
+      gap:5px;
+      max-height:180px;
+      overflow:auto;
+    }
+
+    .missingItem{
+      padding:7px 8px;
+      border:1px solid var(--line);
+      border-radius:9px;
+      background:#fff;
+      color:#596d69;
+      font-size:10px;
+      font-weight:750;
+    }
+
+    @media(max-width:900px){
+      .app{
+        grid-template-rows:auto minmax(0,1fr);
+      }
+
+      .topbar{
+        min-height:58px;
+        flex-wrap:wrap;
+        padding:8px;
+      }
+
+      .subtitle{
+        display:none;
+      }
+
+      .spacer{
+        display:none;
+      }
+
+      .accessPill{
+        order:3;
+        width:100%;
+      }
+
+      .work,
+      .work.sideCollapsed{
+        display:block;
+      }
+
+      .side,
+      .work.sideCollapsed .side{
+        position:absolute;
+        top:0;
+        bottom:0;
+        left:0;
+        z-index:20;
+        width:min(88vw,400px);
+        opacity:1;
+        overflow:auto;
+        pointer-events:auto;
+        transform:translateX(-105%);
+        transition:transform .2s ease;
+        border-right:1px solid var(--line);
+        box-shadow:0 14px 38px rgba(15,45,47,.18);
+      }
+
+      .work.open .side,
+      .work.sideCollapsed.open .side{
+        transform:translateX(0);
+      }
+
+      .mapPane{
+        position:absolute;
+        inset:0;
+      }
+    }
+  </style>
+</head>
+
+<body>
+<div class="app">
+
+  <header class="topbar">
+    <button
+      id="tnBoardMenuToggle"
+      class="menuBtn"
+      type="button"
+      aria-label="TO:NEST 메뉴 열기"
+    >
+      <img src="/favicon.ico?v=10" alt="TO:NEST">
+    </button>
+
+    <div class="titleBox">
+      <div class="title">쿠팡 캠프 지도</div>
+      <div class="subtitle">
+        MAROOWELL 공용 캠프 데이터 · 위치 · 관계 · 길찾기
+      </div>
+    </div>
+
+    <div class="spacer"></div>
+
+    <span id="accessPill" class="accessPill">
+      권한 확인 중
+    </span>
+
+    <a class="btn blue" href="/coupang_camp">
+      목록 보기
+    </a>
+
+    <button id="reload" class="btn primary" type="button">
+      새로고침
+    </button>
+  </header>
+
+
+  <main id="work" class="work">
+
+    <aside class="side">
+      <div class="inner">
+
+        <section class="card">
+          <div class="head">
+            <b>캠프 필터</b>
+            <span>실시간 반영</span>
+          </div>
+
+          <div class="field">
+            <label for="q">검색</label>
+            <input
+              id="q"
+              class="control"
+              type="search"
+              placeholder="캠프명 · 주소 · 코드 · 설명"
+            >
+          </div>
+
+          <div class="field">
+            <label for="type">구분</label>
+            <select id="type" class="control">
+              <option value="">전체</option>
+            </select>
+          </div>
+
+          <div class="cols">
+            <div class="field">
+              <label for="region">Region</label>
+              <select id="region" class="control">
+                <option value="">전체</option>
+              </select>
+            </div>
+
+            <div class="field">
+              <label for="area">Area</label>
+              <select id="area" class="control">
+                <option value="">전체</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="actions">
+            <button id="reset" class="btn" type="button">
+              필터 초기화
+            </button>
+            <button id="fit" class="btn" type="button">
+              전체 위치 보기
+            </button>
+          </div>
+        </section>
+
+
+        <section class="card">
+          <div class="head">
+            <b>조회 현황</b>
+            <span id="time">-</span>
+          </div>
+
+          <div class="stats">
+            <div class="stat">
+              <strong id="visible">0</strong>
+              <span>표시 캠프</span>
+            </div>
+
+            <div class="stat">
+              <strong id="total">0</strong>
+              <span>전체 캠프</span>
+            </div>
+
+            <div class="stat">
+              <strong id="missing">0</strong>
+              <span>위치 실패</span>
+            </div>
+          </div>
+        </section>
+
+
+        <section id="missingCard" class="card" style="display:none">
+          <div class="head">
+            <b>위치 확인 실패</b>
+            <span id="missingCount">0건</span>
+          </div>
+
+          <div id="missingList" class="missingList"></div>
+        </section>
+
+
+        <section class="card">
+          <div class="head">
+            <b>구분별 보기</b>
+            <span>복수 선택 가능</span>
+          </div>
+
+          <div id="chips" class="chips"></div>
+        </section>
+
+
+        <section id="detail" class="card detail">
+          <div class="head">
+            <b>선택 캠프</b>
+            <span id="dType"></span>
+          </div>
+
+          <h3 id="dTitle"></h3>
+          <p id="dSub"></p>
+
+          <div class="rows">
+            <div class="row"><b>주소</b><span id="dAddress"></span></div>
+            <div class="row"><b>Region</b><span id="dRegion"></span></div>
+            <div class="row"><b>Area</b><span id="dArea"></span></div>
+            <div class="row"><b>코드</b><span id="dCode"></span></div>
+            <div class="row"><b>본캠프</b><span id="dParent"></span></div>
+            <div class="row"><b>받는 SH</b><span id="dSh"></span></div>
+            <div class="row"><b>설명</b><span id="dDesc"></span></div>
+            <div class="row"><b>좌표</b><span id="dCoord"></span></div>
+          </div>
+
+          <div class="actions">
+            <button id="copy" class="btn" type="button">
+              주소 복사
+            </button>
+
+            <button id="openKakao" class="btn primary" type="button">
+              카카오맵 열기
+            </button>
+          </div>
+        </section>
+
+
+        <section class="card">
+          <div class="head">
+            <b>캠프 목록</b>
+            <span id="count">0건</span>
+          </div>
+
+          <div id="list" class="list"></div>
+        </section>
+
+      </div>
+    </aside>
+
+
+    <section class="mapPane">
+      <div id="map"></div>
+
+      <button
+        id="sideToggle"
+        class="btn sideToggle"
+        type="button"
+        aria-label="좌측 메뉴 접기"
+        title="좌측 메뉴 접기"
+      >
+        ◀
+      </button>
+
+      <div class="tools">
+        <button id="mapType" class="btn" type="button">
+          위성
+        </button>
+
+        <button id="roadview" class="btn" type="button">
+          로드뷰
+        </button>
+
+        <button id="current" class="btn" type="button">
+          내 위치
+        </button>
+      </div>
+
+      <div
+        id="toast"
+        class="toast"
+        role="status"
+        aria-live="polite"
+      ></div>
+
+      <div id="loading" class="loading">
+        <div id="loadingText">
+          캠프 지도를 불러오는 중...
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+
+<script>
+(() => {
+  "use strict";
+
+  const AUTH_BASE = location.origin;
+  const CAMPS_API_BASE =
+    "https://coupang-camps.tonest-admin.workers.dev";
+
+  const COLORS = [
+    "#16a7a4",
+    "#2563eb",
+    "#16a34a",
+    "#f97316",
+    "#7c3aed",
+    "#db2777",
+    "#0891b2",
+    "#ca8a04",
+    "#475569",
+    "#dc2626"
+  ];
+
+  const $ = selector =>
+    document.querySelector(selector);
+
+  const text = value =>
+    String(value ?? "").trim();
+
+  const lower = value =>
+    text(value).toLowerCase();
+
+  const roleLabel = role => ({
+    super_admin:"최고관리자",
+    admin:"관리자",
+    team_leader:"팀장",
+    driver:"기사"
+  })[role] || role || "-";
+
+  const dom = {
+    work:$("#work"),
+    reload:$("#reload"),
+    query:$("#q"),
+    type:$("#type"),
+    region:$("#region"),
+    area:$("#area"),
+    reset:$("#reset"),
+    fit:$("#fit"),
+    chips:$("#chips"),
+    list:$("#list"),
+    count:$("#count"),
+    visible:$("#visible"),
+    total:$("#total"),
+    missing:$("#missing"),
+    missingCard:$("#missingCard"),
+    missingCount:$("#missingCount"),
+    missingList:$("#missingList"),
+    time:$("#time"),
+    detail:$("#detail"),
+    dType:$("#dType"),
+    dTitle:$("#dTitle"),
+    dSub:$("#dSub"),
+    dAddress:$("#dAddress"),
+    dRegion:$("#dRegion"),
+    dArea:$("#dArea"),
+    dCode:$("#dCode"),
+    dParent:$("#dParent"),
+    dSh:$("#dSh"),
+    dDesc:$("#dDesc"),
+    dCoord:$("#dCoord"),
+    copy:$("#copy"),
+    openKakao:$("#openKakao"),
+    mapType:$("#mapType"),
+    roadview:$("#roadview"),
+    current:$("#current"),
+    sideToggle:$("#sideToggle"),
+    accessPill:$("#accessPill"),
+    toast:$("#toast"),
+    loading:$("#loading"),
+    loadingText:$("#loadingText")
+  };
+
+  const state = {
+    map:null,
+    geocoder:null,
+    clusterer:null,
+    roadviewOverlay:null,
+    isRoadmap:true,
+    isRoadviewOn:false,
+
+    sb:null,
+    session:null,
+    profile:null,
+
+    rows:[],
+    filtered:[],
+    byId:new Map(),
+
+    markers:[],
+    markerEntries:[],
+    labels:[],
+    relationLines:[],
+    routeOverlay:null,
+
+    selected:null,
+    selectedTypes:new Set(),
+    colorMap:new Map(),
+
+    geocodeCache:new Map(),
+    geocodeSaveTimer:null
+  };
+
+  const GEOCODE_KEY =
+    "tn_coupang_camp_geocode_v1";
+
+  const GEOCODE_MAX_AGE =
+    1000 * 60 * 60 * 24 * 45;
+
+  function showToast(message,error=false) {
+    dom.toast.textContent =
+      message || "";
+
+    dom.toast.className =
+      "toast show" +
+      (error ? " err" : "");
+
+    clearTimeout(showToast.timer);
+
+    showToast.timer =
+      setTimeout(
+        () => {
+          dom.toast.className =
+            "toast";
+        },
+        2300
+      );
+  }
+
+  function campName(row) {
+    if (
+      text(row.camp) &&
+      text(row.mb_camp) &&
+      text(row.camp) !== text(row.mb_camp) &&
+      text(row.mb_camp) !== "본캠프"
+    ) {
+      return `${text(row.camp)} · ${text(row.mb_camp)}`;
+    }
+
+    return (
+      text(row.camp) ||
+      text(row.mb_camp) ||
+      text(row.code) ||
+      "이름 없는 캠프"
+    );
+  }
+
+  function rowId(row) {
+    return String(
+      row?.id ??
+      [
+        row?.camp,
+        row?.mb_camp,
+        row?.code
+      ].join("|")
+    );
+  }
+
+  function normType(row) {
+    return (
+      text(row?.camp_type) ||
+      "미분류"
+    );
+  }
+
+  function colorFor(type) {
+    const key =
+      text(type) || "미분류";
+
+    if (!state.colorMap.has(key)) {
+      state.colorMap.set(
+        key,
+        COLORS[
+          state.colorMap.size %
+          COLORS.length
+        ]
+      );
+    }
+
+    return state.colorMap.get(key);
+  }
+
+  function validCoord(lat,lng) {
+    return (
+      Number.isFinite(lat) &&
+      Number.isFinite(lng) &&
+      lat >= -90 &&
+      lat <= 90 &&
+      lng >= -180 &&
+      lng <= 180 &&
+      !(lat === 0 && lng === 0)
+    );
+  }
+
+  function parentRow(row) {
+    const id =
+      row?.parent_camp_id;
+
+    if (id == null) return null;
+
+    return (
+      state.byId.get(String(id)) ||
+      null
+    );
+  }
+
+  function isBaseCamp(row) {
+    if (!row) return false;
+
+    if (
+      text(row.camp_type)
+        .toUpperCase() === "SUB_HUB"
+    ) {
+      return false;
+    }
+
+    const mb =
+      text(row.mb_camp);
+
+    return (
+      !mb ||
+      mb === "본캠프" ||
+      mb === text(row.camp)
+    );
+  }
+
+  function inferredParent(row) {
+    if (
+      !row ||
+      isBaseCamp(row) ||
+      text(row.camp_type).toUpperCase() === "SUB_HUB"
+    ) {
+      return null;
+    }
+
+    return (
+      state.rows.find(candidate =>
+        candidate !== row &&
+        isBaseCamp(candidate) &&
+        text(candidate.camp) ===
+          text(row.camp)
+      ) ||
+      null
+    );
+  }
+
+  function effectiveParent(row) {
+    return (
+      parentRow(row) ||
+      inferredParent(row)
+    );
+  }
+
+  function receivingShRow(row) {
+    let current = row;
+    const visited = new Set();
+
+    while (current) {
+      const currentId =
+        rowId(current);
+
+      if (visited.has(currentId)) {
+        break;
+      }
+
+      visited.add(currentId);
+
+      if (
+        current.receiving_sh_id != null
+      ) {
+        return (
+          state.byId.get(
+            String(current.receiving_sh_id)
+          ) ||
+          null
+        );
+      }
+
+      current =
+        effectiveParent(current);
+    }
+
+    return null;
+  }
+
+  function inheritedRegion(row) {
+    const parent =
+      effectiveParent(row);
+
+    return (
+      text(parent?.region) ||
+      text(row?.region)
+    );
+  }
+
+  function inheritedArea(row) {
+    const parent =
+      effectiveParent(row);
+
+    return (
+      text(parent?.area) ||
+      text(row?.area)
+    );
+  }
+
+  function normalizeRow(row) {
+    const latitude =
+      Number(row.latitude);
+
+    const longitude =
+      Number(row.longitude);
+
+    return {
+      ...row,
+      latitude:
+        Number.isFinite(latitude)
+          ? latitude
+          : null,
+      longitude:
+        Number.isFinite(longitude)
+          ? longitude
+          : null,
+      hasValidCoordinates:
+        validCoord(
+          latitude,
+          longitude
+        ),
+      coordinateSource:
+        validCoord(
+          latitude,
+          longitude
+        )
+          ? "database"
+          : "missing"
+    };
+  }
+
+  function loadGeocodeCache() {
+    try {
+      const raw =
+        localStorage.getItem(
+          GEOCODE_KEY
+        );
+
+      if (!raw) return;
+
+      const parsed =
+        JSON.parse(raw);
+
+      const now =
+        Date.now();
+
+      for (
+        const [key,entry]
+        of Object.entries(parsed || {})
+      ) {
+        if (
+          !entry ||
+          now - Number(entry.savedAt || 0)
+            > GEOCODE_MAX_AGE
+        ) {
+          continue;
+        }
+
+        state.geocodeCache.set(
+          key,
+          entry.value ?? null
+        );
+      }
+    } catch {}
+  }
+
+  function saveGeocodeCacheSoon() {
+    clearTimeout(
+      state.geocodeSaveTimer
+    );
+
+    state.geocodeSaveTimer =
+      setTimeout(
+        () => {
+          try {
+            const payload = {};
+            const savedAt =
+              Date.now();
+
+            for (
+              const [key,value]
+              of state.geocodeCache
+            ) {
+              payload[key] = {
+                savedAt,
+                value
+              };
+            }
+
+            localStorage.setItem(
+              GEOCODE_KEY,
+              JSON.stringify(payload)
+            );
+          } catch {}
+        },
+        250
+      );
+  }
+
+  function geocodeAddress(address) {
+    const key =
+      lower(address);
+
+    if (!key) {
+      return Promise.resolve(null);
+    }
+
+    if (
+      state.geocodeCache.has(key)
+    ) {
+      return Promise.resolve(
+        state.geocodeCache.get(key)
+      );
+    }
+
+    return new Promise(resolve => {
+      state.geocoder.addressSearch(
+        address,
+        (result,status) => {
+          let value = null;
+
+          if (
+            status ===
+              kakao.maps.services.Status.OK &&
+            Array.isArray(result) &&
+            result[0]
+          ) {
+            const lat =
+              Number(result[0].y);
+
+            const lng =
+              Number(result[0].x);
+
+            if (
+              validCoord(lat,lng)
+            ) {
+              value = {lat,lng};
+            }
+          }
+
+          state.geocodeCache.set(
+            key,
+            value
+          );
+
+          saveGeocodeCacheSoon();
+
+          resolve(value);
+        }
+      );
+    });
+  }
+
+  async function resolveMissingCoordinates() {
+    const targets =
+      state.rows.filter(row =>
+        !row.hasValidCoordinates &&
+        text(row.address)
+      );
+
+    const concurrency = 7;
+    let cursor = 0;
+    let resolved = 0;
+
+    async function runner() {
+      while (cursor < targets.length) {
+        const row =
+          targets[cursor++];
+
+        const coord =
+          await geocodeAddress(
+            row.address
+          );
+
+        if (!coord) continue;
+
+        row.latitude = coord.lat;
+        row.longitude = coord.lng;
+        row.hasValidCoordinates = true;
+        row.coordinateSource =
+          "address";
+
+        resolved++;
+      }
+    }
+
+    await Promise.all(
+      Array.from(
+        {
+          length:
+            Math.min(
+              concurrency,
+              Math.max(
+                targets.length,
+                1
+              )
+            )
+        },
+        () => runner()
+      )
+    );
+
+    return resolved;
+  }
+
+  function markerImage(row) {
+    const color =
+      colorFor(
+        normType(row)
+      );
+
+    const svg =
+      `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="38" viewBox="0 0 28 38">
+        <path d="M14 1C6.9 1 1 6.7 1 13.8C1 24 14 37 14 37S27 24 27 13.8C27 6.7 21.1 1 14 1Z" fill="${color}" stroke="white" stroke-width="2"/>
+        <circle cx="14" cy="13.7" r="5.3" fill="white"/>
+      </svg>`;
+
+    return new kakao.maps.MarkerImage(
+      "data:image/svg+xml;charset=UTF-8," +
+      encodeURIComponent(svg),
+      new kakao.maps.Size(28,38),
+      {
+        offset:
+          new kakao.maps.Point(
+            14,
+            38
+          )
+      }
+    );
+  }
+
+  function clearLabels() {
+    for (const overlay of state.labels) {
+      overlay.setMap(null);
+    }
+
+    state.labels = [];
+  }
+
+  function makeLabel(row,position) {
+    const node =
+      document.createElement("div");
+
+    node.className = "label";
+    node.textContent = campName(row);
+
+    const overlay =
+      new kakao.maps.CustomOverlay({
+        position,
+        content:node,
+        yAnchor:1,
+        zIndex:5
+      });
+
+    overlay.setMap(state.map);
+    state.labels.push(overlay);
+  }
+
+  function clearRelations() {
+    for (
+      const item of
+      state.relationLines
+    ) {
+      item.setMap(null);
+    }
+
+    state.relationLines = [];
+
+    if (state.routeOverlay) {
+      state.routeOverlay.setMap(null);
+      state.routeOverlay = null;
+    }
+  }
+
+  function relationPosition(row) {
+    if (
+      row?.hasValidCoordinates
+    ) {
+      return {
+        latitude:row.latitude,
+        longitude:row.longitude
+      };
+    }
+
+    return null;
+  }
+
+  function addRelationLine(
+    source,
+    target,
+    color,
+    clickable = false
+  ) {
+    const a =
+      relationPosition(source);
+
+    const b =
+      relationPosition(target);
+
+    if (!a || !b) {
+      return null;
+    }
+
+    const line =
+      new kakao.maps.Polyline({
+        map:state.map,
+        path:[
+          new kakao.maps.LatLng(
+            a.latitude,
+            a.longitude
+          ),
+          new kakao.maps.LatLng(
+            b.latitude,
+            b.longitude
+          )
+        ],
+        strokeWeight:4,
+        strokeColor:color,
+        strokeOpacity:.8,
+        strokeStyle:"solid",
+        zIndex:3
+      });
+
+    state.relationLines.push(line);
+
+    if (clickable) {
+      kakao.maps.event.addListener(
+        line,
+        "click",
+        event => {
+          loadDirections(
+            source,
+            target,
+            event.latLng
+          );
+        }
+      );
+    }
+
+    return line;
+  }
+
+  function formatDistance(meters) {
+    const value =
+      Number(meters || 0);
+
+    if (value < 1000) {
+      return `${Math.round(value)}m`;
+    }
+
+    return `${(value / 1000).toFixed(
+      value < 10000 ? 1 : 0
+    )}km`;
+  }
+
+  function formatDuration(seconds) {
+    const minutes =
+      Math.max(
+        1,
+        Math.round(
+          Number(seconds || 0) / 60
+        )
+      );
+
+    if (minutes < 60) {
+      return `${minutes}분`;
+    }
+
+    const hours =
+      Math.floor(minutes / 60);
+
+    const remain =
+      minutes % 60;
+
+    return remain
+      ? `${hours}시간 ${remain}분`
+      : `${hours}시간`;
+  }
+
+  function showRouteOverlay(
+    position,
+    source,
+    target,
+    data = null,
+    error = ""
+  ) {
+    if (state.routeOverlay) {
+      state.routeOverlay.setMap(null);
+    }
+
+    const node =
+      document.createElement("div");
+
+    node.className =
+      "routeInfo";
+
+    const title =
+      document.createElement("strong");
+
+    title.textContent =
+      `${campName(source)} → ${campName(target)}`;
+
+    node.appendChild(title);
+
+    const add = (key,value) => {
+      const row =
+        document.createElement("div");
+
+      row.className = "routeRow";
+
+      const k =
+        document.createElement("span");
+
+      k.className = "routeKey";
+      k.textContent = key;
+
+      const v =
+        document.createElement("span");
+
+      v.className = "routeVal";
+      v.textContent = value;
+
+      row.append(k,v);
+      node.appendChild(row);
+    };
+
+    if (error) {
+      add("길찾기",error);
+    } else if (!data) {
+      add(
+        "카카오지도",
+        "현재 교통정보 조회 중..."
+      );
+    } else {
+      add(
+        "최단거리",
+        `${formatDistance(
+          data.shortestDistance?.distance
+        )} · ${formatDuration(
+          data.shortestDistance?.duration
+        )}`
+      );
+
+      add(
+        "최단시간",
+        `${formatDuration(
+          data.fastestTime?.duration
+        )} · ${formatDistance(
+          data.fastestTime?.distance
+        )}`
+      );
+
+      const time =
+        document.createElement("div");
+
+      time.className =
+        "routeTime";
+
+      time.textContent =
+        `${new Date(
+          data.queriedAt ||
+          Date.now()
+        ).toLocaleString("ko-KR")} 기준`;
+
+      node.appendChild(time);
+    }
+
+    state.routeOverlay =
+      new kakao.maps.CustomOverlay({
+        position,
+        content:node,
+        yAnchor:1.1,
+        zIndex:40,
+        clickable:true
+      });
+
+    state.routeOverlay.setMap(
+      state.map
+    );
+  }
+
+  async function loadDirections(
+    source,
+    target,
+    position
+  ) {
+    showRouteOverlay(
+      position,
+      source,
+      target
+    );
+
+    try {
+      const params =
+        new URLSearchParams({
+          origin_lng:
+            String(source.longitude),
+          origin_lat:
+            String(source.latitude),
+          destination_lng:
+            String(target.longitude),
+          destination_lat:
+            String(target.latitude)
+        });
+
+      const data =
+        await apiFetch(
+          "/directions?" +
+          params.toString()
+        );
+
+      showRouteOverlay(
+        position,
+        source,
+        target,
+        data
+      );
+
+    } catch (error) {
+      showRouteOverlay(
+        position,
+        source,
+        target,
+        null,
+        error?.message ||
+        String(error)
+      );
+    }
+  }
+
+  function renderRelations(row) {
+    clearRelations();
+
+    const parent =
+      effectiveParent(row);
+
+    const sh =
+      receivingShRow(row);
+
+    if (parent) {
+      addRelationLine(
+        parent,
+        row,
+        "#2563eb",
+        false
+      );
+    }
+
+    if (sh) {
+      addRelationLine(
+        sh,
+        row,
+        "#64748b",
+        true
+      );
+    }
+  }
+
+  function clearMarkers() {
+    if (state.clusterer) {
+      state.clusterer.clear();
+    }
+
+    for (
+      const marker of
+      state.markers
+    ) {
+      marker.setMap(null);
+    }
+
+    state.markers = [];
+    state.markerEntries = [];
+
+    clearLabels();
+    clearRelations();
+  }
+
+  function renderMarkers(
+    fitBounds = false
+  ) {
+    clearMarkers();
+
+    const bounds =
+      new kakao.maps.LatLngBounds();
+
+    for (
+      const row of
+      state.filtered
+    ) {
+      if (
+        !row.hasValidCoordinates
+      ) {
+        continue;
+      }
+
+      const position =
+        new kakao.maps.LatLng(
+          row.latitude,
+          row.longitude
+        );
+
+      const marker =
+        new kakao.maps.Marker({
+          position,
+          image:markerImage(row),
+          title:campName(row),
+          zIndex:
+            text(row.camp_type)
+              .toUpperCase() ===
+              "SUB_HUB"
+              ? 3200
+              : 3000
+        });
+
+      kakao.maps.event.addListener(
+        marker,
+        "click",
+        () => selectCamp(
+          row,
+          true
+        )
+      );
+
+      state.markers.push(marker);
+      state.markerEntries.push({
+        marker,
+        row
+      });
+
+      bounds.extend(position);
+    }
+
+    state.clusterer.addMarkers(
+      state.markers
+    );
+
+    /*
+     * 지도 확대 상태에서는 라벨 표시.
+     * 너무 축소돼 있으면 클러스터만 보여서 가독성을 유지.
+     */
+    if (
+      state.map.getLevel() <= 7
+    ) {
+      for (
+        const {row,marker}
+        of state.markerEntries
+      ) {
+        makeLabel(
+          row,
+          marker.getPosition()
+        );
+      }
+    }
+
+    if (
+      fitBounds &&
+      state.markers.length
+    ) {
+      state.map.setBounds(bounds);
+    }
+
+    if (state.selected) {
+      renderRelations(
+        state.selected
+      );
+    }
+  }
+
+  function fillSelect(
+    select,
+    values
+  ) {
+    const old =
+      select.value;
+
+    select.innerHTML =
+      '<option value="">전체</option>' +
+      values
+        .map(value =>
+          `<option value="${value}">${value}</option>`
+        )
+        .join("");
+
+    if (
+      values.includes(old)
+    ) {
+      select.value = old;
+    }
+  }
+
+  function updateFilterOptions() {
+    const types =
+      Array.from(
+        new Set(
+          state.rows
+            .map(row => normType(row))
+            .filter(Boolean)
+        )
+      ).sort((a,b) =>
+        a.localeCompare(
+          b,
+          "ko",
+          {numeric:true}
+        )
+      );
+
+    const regions =
+      Array.from(
+        new Set(
+          state.rows
+            .map(row =>
+              inheritedRegion(row)
+            )
+            .filter(Boolean)
+        )
+      ).sort((a,b) =>
+        a.localeCompare(
+          b,
+          "ko",
+          {numeric:true}
+        )
+      );
+
+    const areas =
+      Array.from(
+        new Set(
+          state.rows
+            .map(row =>
+              inheritedArea(row)
+            )
+            .filter(Boolean)
+        )
+      ).sort((a,b) =>
+        a.localeCompare(
+          b,
+          "ko",
+          {numeric:true}
+        )
+      );
+
+    fillSelect(
+      dom.type,
+      types
+    );
+
+    fillSelect(
+      dom.region,
+      regions
+    );
+
+    fillSelect(
+      dom.area,
+      areas
+    );
+
+    dom.chips.replaceChildren();
+
+    for (const type of types) {
+      const button =
+        document.createElement("button");
+
+      button.type = "button";
+      button.className =
+        "chip" +
+        (
+          state.selectedTypes.has(type)
+            ? " active"
+            : ""
+        );
+
+      button.dataset.type = type;
+
+      const dot =
+        document.createElement("span");
+
+      dot.className = "dot";
+      dot.style.background =
+        colorFor(type);
+
+      button.append(
+        dot,
+        document.createTextNode(type)
+      );
+
+      dom.chips.appendChild(button);
+    }
+  }
+
+  function renderMissing() {
+    const missing =
+      state.rows.filter(
+        row =>
+          !row.hasValidCoordinates
+      );
+
+    dom.missing.textContent =
+      missing.length.toLocaleString();
+
+    dom.missingCount.textContent =
+      `${missing.length.toLocaleString()}건`;
+
+    dom.missingCard.style.display =
+      missing.length
+        ? ""
+        : "none";
+
+    dom.missingList.replaceChildren();
+
+    for (
+      const row of
+      missing.slice(0,80)
+    ) {
+      const item =
+        document.createElement("div");
+
+      item.className =
+        "missingItem";
+
+      item.textContent =
+        `${campName(row)} · ${
+          text(row.address) ||
+          "주소 없음"
+        }`;
+
+      dom.missingList.appendChild(
+        item
+      );
+    }
+  }
+
+  function applyFilters(
+    fitBounds = false
+  ) {
+    const q =
+      lower(dom.query.value);
+
+    const type =
+      text(dom.type.value);
+
+    const region =
+      text(dom.region.value);
+
+    const area =
+      text(dom.area.value);
+
+    state.filtered =
+      state.rows.filter(row => {
+        if (
+          state.selectedTypes.size &&
+          !state.selectedTypes.has(
+            normType(row)
+          )
+        ) {
+          return false;
+        }
+
+        if (
+          type &&
+          normType(row) !== type
+        ) {
+          return false;
+        }
+
+        if (
+          region &&
+          inheritedRegion(row) !== region
+        ) {
+          return false;
+        }
+
+        if (
+          area &&
+          inheritedArea(row) !== area
+        ) {
+          return false;
+        }
+
+        if (q) {
+          const hay =
+            [
+              campName(row),
+              row.address,
+              row.code,
+              row.description,
+              inheritedRegion(row),
+              inheritedArea(row)
+            ]
+              .map(lower)
+              .join("\n");
+
+          if (!hay.includes(q)) {
+            return false;
+          }
+        }
+
+        return true;
+      })
+      .filter(
+        row =>
+          row.hasValidCoordinates
+      );
+
+    state.filtered.sort(
+      (a,b) =>
+        campName(a).localeCompare(
+          campName(b),
+          "ko",
+          {
+            numeric:true,
+            sensitivity:"base"
+          }
+        )
+    );
+
+    dom.visible.textContent =
+      state.filtered.length.toLocaleString();
+
+    dom.total.textContent =
+      state.rows.length.toLocaleString();
+
+    dom.count.textContent =
+      `${state.filtered.length.toLocaleString()}건`;
+
+    dom.time.textContent =
+      new Date().toLocaleTimeString(
+        "ko-KR",
+        {
+          hour:"2-digit",
+          minute:"2-digit"
+        }
+      );
+
+    renderMarkers(fitBounds);
+    renderList();
+    renderMissing();
+  }
+
+  function renderList() {
+    dom.list.replaceChildren();
+
+    if (!state.filtered.length) {
+      const empty =
+        document.createElement("div");
+
+      empty.className = "empty";
+      empty.textContent =
+        "조건에 맞는 캠프가 없습니다.";
+
+      dom.list.appendChild(empty);
+      return;
+    }
+
+    for (
+      const row of
+      state.filtered.slice(0,500)
+    ) {
+      const button =
+        document.createElement("button");
+
+      button.type = "button";
+
+      button.className =
+        "item" +
+        (
+          state.selected &&
+          rowId(state.selected) ===
+            rowId(row)
+            ? " active"
+            : ""
+        );
+
+      button.dataset.id =
+        rowId(row);
+
+      const title =
+        document.createElement("strong");
+
+      title.textContent =
+        campName(row);
+
+      const meta =
+        document.createElement("span");
+
+      meta.textContent =
+        [
+          normType(row),
+          inheritedRegion(row),
+          inheritedArea(row),
+          row.code
+        ]
+          .filter(Boolean)
+          .join(" · ");
+
+      button.append(
+        title,
+        meta
+      );
+
+      dom.list.appendChild(button);
+    }
+  }
+
+  function selectCamp(
+    row,
+    focusMap = true
+  ) {
+    state.selected = row;
+
+    dom.detail.classList.add(
+      "show"
+    );
+
+    dom.dType.textContent =
+      normType(row);
+
+    dom.dTitle.textContent =
+      campName(row);
+
+    dom.dSub.textContent =
+      text(row.mb_camp) &&
+      text(row.mb_camp) !==
+        text(row.camp)
+        ? `MB캠프 ${text(row.mb_camp)}`
+        : "";
+
+    dom.dAddress.textContent =
+      text(row.address) || "-";
+
+    dom.dRegion.textContent =
+      inheritedRegion(row) || "-";
+
+    dom.dArea.textContent =
+      inheritedArea(row) || "-";
+
+    dom.dCode.textContent =
+      text(row.code) || "-";
+
+    const parent =
+      effectiveParent(row);
+
+    const sh =
+      receivingShRow(row);
+
+    dom.dParent.textContent =
+      parent
+        ? campName(parent)
+        : "-";
+
+    dom.dSh.textContent =
+      sh
+        ? campName(sh)
+        : "미지정";
+
+    dom.dDesc.textContent =
+      text(row.description) || "-";
+
+    dom.dCoord.textContent =
+      row.hasValidCoordinates
+        ? `${row.latitude}, ${row.longitude}${
+            row.coordinateSource ===
+              "address"
+              ? " · 주소 변환"
+              : ""
+          }`
+        : "-";
+
+    if (
+      row.hasValidCoordinates &&
+      focusMap
+    ) {
+      const position =
+        new kakao.maps.LatLng(
+          row.latitude,
+          row.longitude
+        );
+
+      state.map.panTo(position);
+
+      if (
+        state.map.getLevel() > 5
+      ) {
+        state.map.setLevel(
+          5,
+          {anchor:position}
+        );
+      }
+    }
+
+    renderRelations(row);
+    renderList();
+
+    if (
+      window.matchMedia(
+        "(max-width:900px)"
+      ).matches
+    ) {
+      dom.work.classList.remove(
+        "open"
+      );
+    }
+  }
+
+  function clearSelection() {
+    state.selected = null;
+    dom.detail.classList.remove(
+      "show"
+    );
+
+    clearRelations();
+    renderList();
+  }
+
+  async function initAuth() {
+    const cfgResponse =
+      await fetch(
+        AUTH_BASE +
+        "/auth-config",
+        {cache:"no-store"}
+      );
+
+    const cfg =
+      await cfgResponse
+        .json()
+        .catch(() => ({}));
+
+    if (
+      !cfgResponse.ok ||
+      !cfg.supabaseUrl ||
+      !cfg.supabaseKey
+    ) {
+      throw new Error(
+        cfg.message ||
+        "로그인 설정을 불러오지 못했습니다."
+      );
+    }
+
+    state.sb =
+      window.supabase.createClient(
+        cfg.supabaseUrl,
+        cfg.supabaseKey,
+        {
+          auth:{
+            persistSession:true,
+            storage:sessionStorage,
+            autoRefreshToken:true,
+            detectSessionInUrl:true
+          }
+        }
+      );
+
+    const {
+      data:{session}
+    } =
+      await state.sb.auth.getSession();
+
+    if (!session?.access_token) {
+      location.replace(
+        "/?next=%2Fcoupang_camp_map"
+      );
+      return false;
+    }
+
+    state.session = session;
+
+    const me =
+      await apiFetch("/me");
+
+    state.profile =
+      me.profile || {};
+
+    const display =
+      state.profile.display_name ||
+      state.profile.email ||
+      state.session.user.email ||
+      "사용자";
+
+    dom.accessPill.textContent =
+      `${display} · ${roleLabel(
+        state.profile.role
+      )}`;
+
+    return true;
+  }
+
+  async function apiFetch(
+    path,
+    options = {}
+  ) {
+    if (
+      !state.session?.access_token &&
+      !path.startsWith("/me")
+    ) {
+      throw new Error(
+        "로그인 세션이 없습니다."
+      );
+    }
+
+    const token =
+      state.session?.access_token;
+
+    const headers =
+      new Headers(
+        options.headers || {}
+      );
+
+    if (token) {
+      headers.set(
+        "Authorization",
+        "Bearer " + token
+      );
+    }
+
+    if (
+      options.body &&
+      !headers.has("Content-Type")
+    ) {
+      headers.set(
+        "Content-Type",
+        "application/json"
+      );
+    }
+
+    const response =
+      await fetch(
+        CAMPS_API_BASE + path,
+        {
+          ...options,
+          headers,
+          cache:"no-store"
+        }
+      );
+
+    const payload =
+      await response
+        .json()
+        .catch(() => ({}));
+
+    if (!response.ok) {
+      const error =
+        new Error(
+          payload?.message ||
+          payload?.error ||
+          `HTTP ${response.status}`
+        );
+
+      error.status =
+        response.status;
+
+      throw error;
+    }
+
+    return payload;
+  }
+
+  async function loadRows() {
+    dom.loading.classList.remove(
+      "hide"
+    );
+
+    dom.loadingText.textContent =
+      "캠프 데이터를 불러오는 중...";
+
+    try {
+      const payload =
+        await apiFetch(
+          "/camps?limit=1000"
+        );
+
+      const rows =
+        Array.isArray(payload?.rows)
+          ? payload.rows
+          : [];
+
+      state.rows =
+        rows.map(normalizeRow);
+
+      state.byId =
+        new Map(
+          state.rows
+            .filter(
+              row =>
+                row.id != null
+            )
+            .map(
+              row => [
+                String(row.id),
+                row
+              ]
+            )
+        );
+
+      const missingBefore =
+        state.rows.filter(
+          row =>
+            !row.hasValidCoordinates &&
+            text(row.address)
+        ).length;
+
+      updateFilterOptions();
+      applyFilters(true);
+
+      dom.loading.classList.add(
+        "hide"
+      );
+
+      if (missingBefore) {
+        showToast(
+          `캠프 ${state.rows.length.toLocaleString()}건 표시 · 주소 ${missingBefore.toLocaleString()}건 위치 보정 중`
+        );
+
+        const resolved =
+          await resolveMissingCoordinates();
+
+        updateFilterOptions();
+        applyFilters(false);
+
+        showToast(
+          `주소 위치 ${resolved.toLocaleString()}건 보정 완료`
+        );
+      } else {
+        showToast(
+          `캠프 ${state.rows.length.toLocaleString()}건을 불러왔습니다.`
+        );
+      }
+
+    } finally {
+      dom.loading.classList.add(
+        "hide"
+      );
+    }
+  }
+
+  function fitAll() {
+    applyFilters(true);
+  }
+
+  function resetFilters() {
+    dom.query.value = "";
+    dom.type.value = "";
+    dom.region.value = "";
+    dom.area.value = "";
+    state.selectedTypes.clear();
+
+    updateFilterOptions();
+    applyFilters(true);
+  }
+
+  function updateSidebarButton() {
+    const mobile =
+      window.matchMedia(
+        "(max-width:900px)"
+      ).matches;
+
+    const collapsed =
+      mobile
+        ? !dom.work.classList.contains(
+            "open"
+          )
+        : dom.work.classList.contains(
+            "sideCollapsed"
+          );
+
+    dom.sideToggle.textContent =
+      collapsed ? "▶" : "◀";
+
+    dom.sideToggle.title =
+      collapsed
+        ? "좌측 메뉴 펼치기"
+        : "좌측 메뉴 접기";
+  }
+
+  function toggleSidebar() {
+    const mobile =
+      window.matchMedia(
+        "(max-width:900px)"
+      ).matches;
+
+    if (mobile) {
+      dom.work.classList.toggle(
+        "open"
+      );
+    } else {
+      dom.work.classList.toggle(
+        "sideCollapsed"
+      );
+    }
+
+    updateSidebarButton();
+
+    const center =
+      state.map?.getCenter?.();
+
+    setTimeout(
+      () => {
+        state.map?.relayout();
+
+        if (center) {
+          state.map?.setCenter(center);
+        }
+      },
+      220
+    );
+  }
+
+  function bindEvents() {
+    let searchTimer = null;
+
+    dom.query.addEventListener(
+      "input",
+      () => {
+        clearTimeout(searchTimer);
+
+        searchTimer =
+          setTimeout(
+            () =>
+              applyFilters(true),
+            160
+          );
+      }
+    );
+
+    dom.type.addEventListener(
+      "change",
+      () => {
+        state.selectedTypes.clear();
+
+        if (dom.type.value) {
+          state.selectedTypes.add(
+            dom.type.value
+          );
+        }
+
+        updateFilterOptions();
+        applyFilters(true);
+      }
+    );
+
+    dom.region.addEventListener(
+      "change",
+      () =>
+        applyFilters(true)
+    );
+
+    dom.area.addEventListener(
+      "change",
+      () =>
+        applyFilters(true)
+    );
+
+    dom.chips.addEventListener(
+      "click",
+      event => {
+        const button =
+          event.target.closest(
+            "[data-type]"
+          );
+
+        if (!button) return;
+
+        const type =
+          button.dataset.type;
+
+        if (
+          state.selectedTypes.has(type)
+        ) {
+          state.selectedTypes.delete(
+            type
+          );
+        } else {
+          state.selectedTypes.add(type);
+        }
+
+        if (
+          state.selectedTypes.size === 1
+        ) {
+          dom.type.value =
+            [...state.selectedTypes][0];
+        } else {
+          dom.type.value = "";
+        }
+
+        updateFilterOptions();
+        applyFilters(true);
+      }
+    );
+
+    dom.list.addEventListener(
+      "click",
+      event => {
+        const button =
+          event.target.closest(
+            "[data-id]"
+          );
+
+        if (!button) return;
+
+        const row =
+          state.filtered.find(
+            item =>
+              rowId(item) ===
+              button.dataset.id
+          );
+
+        if (row) {
+          selectCamp(
+            row,
+            true
+          );
+        }
+      }
+    );
+
+    dom.reset.addEventListener(
+      "click",
+      resetFilters
+    );
+
+    dom.fit.addEventListener(
+      "click",
+      fitAll
+    );
+
+    dom.reload.addEventListener(
+      "click",
+      () =>
+        loadRows()
+          .catch(error =>
+            showToast(
+              error?.message ||
+              String(error),
+              true
+            )
+          )
+    );
+
+    dom.sideToggle.addEventListener(
+      "click",
+      toggleSidebar
+    );
+
+    dom.mapType.addEventListener(
+      "click",
+      () => {
+        state.isRoadmap =
+          !state.isRoadmap;
+
+        state.map.setMapTypeId(
+          state.isRoadmap
+            ? kakao.maps.MapTypeId.ROADMAP
+            : kakao.maps.MapTypeId.SKYVIEW
+        );
+
+        dom.mapType.textContent =
+          state.isRoadmap
+            ? "위성"
+            : "일반지도";
+      }
+    );
+
+    dom.roadview.addEventListener(
+      "click",
+      () => {
+        if (
+          !state.roadviewOverlay
+        ) {
+          showToast(
+            "로드뷰 오버레이를 사용할 수 없습니다.",
+            true
+          );
+          return;
+        }
+
+        state.isRoadviewOn =
+          !state.isRoadviewOn;
+
+        state.roadviewOverlay.setMap(
+          state.isRoadviewOn
+            ? state.map
+            : null
+        );
+
+        dom.roadview.classList.toggle(
+          "active",
+          state.isRoadviewOn
+        );
+      }
+    );
+
+    dom.current.addEventListener(
+      "click",
+      () => {
+        if (
+          !navigator.geolocation
+        ) {
+          showToast(
+            "현재 위치 확인을 지원하지 않습니다.",
+            true
+          );
+          return;
+        }
+
+        navigator.geolocation
+          .getCurrentPosition(
+            position => {
+              const current =
+                new kakao.maps.LatLng(
+                  position.coords.latitude,
+                  position.coords.longitude
+                );
+
+              state.map.panTo(
+                current
+              );
+
+              state.map.setLevel(
+                5,
+                {anchor:current}
+              );
+            },
+            () =>
+              showToast(
+                "현재 위치를 확인할 수 없습니다.",
+                true
+              ),
+            {
+              enableHighAccuracy:true,
+              timeout:10000,
+              maximumAge:30000
+            }
+          );
+      }
+    );
+
+    dom.copy.addEventListener(
+      "click",
+      async () => {
+        if (
+          !state.selected?.address
+        ) {
+          showToast(
+            "복사할 주소가 없습니다.",
+            true
+          );
+          return;
+        }
+
+        try {
+          await navigator.clipboard
+            .writeText(
+              state.selected.address
+            );
+
+          showToast(
+            "주소를 복사했습니다."
+          );
+        } catch {
+          showToast(
+            "주소 복사에 실패했습니다.",
+            true
+          );
+        }
+      }
+    );
+
+    dom.openKakao.addEventListener(
+      "click",
+      () => {
+        if (!state.selected) {
+          return;
+        }
+
+        const label =
+          encodeURIComponent(
+            campName(
+              state.selected
+            )
+          );
+
+        const url =
+          `https://map.kakao.com/link/map/${label},${state.selected.latitude},${state.selected.longitude}`;
+
+        window.open(
+          url,
+          "_blank",
+          "noopener,noreferrer"
+        );
+      }
+    );
+
+    kakao.maps.event.addListener(
+      state.map,
+      "zoom_changed",
+      () =>
+        renderMarkers(false)
+    );
+
+    kakao.maps.event.addListener(
+      state.map,
+      "click",
+      clearSelection
+    );
+
+    window.addEventListener(
+      "resize",
+      () => {
+        state.map?.relayout();
+        updateSidebarButton();
+      }
+    );
+  }
+
+  async function init() {
+    loadGeocodeCache();
+
+    const authReady =
+      await initAuth();
+
+    if (!authReady) {
+      return;
+    }
+
+    state.map =
+      new kakao.maps.Map(
+        $("#map"),
+        {
+          center:
+            new kakao.maps.LatLng(
+              36.45,
+              127.85
+            ),
+          level:13
+        }
+      );
+
+    state.geocoder =
+      new kakao.maps.services.Geocoder();
+
+    state.clusterer =
+      new kakao.maps.MarkerClusterer({
+        map:state.map,
+        averageCenter:true,
+        minLevel:7,
+        gridSize:48,
+        calculator:[10,30,70],
+        styles:[
+          {
+            width:"30px",
+            height:"30px",
+            background:"rgba(22,167,164,.84)",
+            border:"2px solid white",
+            borderRadius:"50%",
+            color:"#073b3a",
+            textAlign:"center",
+            fontSize:"11px",
+            fontWeight:"900",
+            lineHeight:"26px",
+            boxShadow:"0 3px 10px rgba(15,45,47,.22)"
+          },
+          {
+            width:"34px",
+            height:"34px",
+            background:"rgba(37,99,235,.82)",
+            border:"2px solid white",
+            borderRadius:"50%",
+            color:"#fff",
+            textAlign:"center",
+            fontSize:"11px",
+            fontWeight:"900",
+            lineHeight:"30px",
+            boxShadow:"0 3px 10px rgba(15,45,47,.22)"
+          },
+          {
+            width:"38px",
+            height:"38px",
+            background:"rgba(22,163,74,.84)",
+            border:"2px solid white",
+            borderRadius:"50%",
+            color:"#fff",
+            textAlign:"center",
+            fontSize:"12px",
+            fontWeight:"900",
+            lineHeight:"34px",
+            boxShadow:"0 3px 10px rgba(15,45,47,.22)"
+          },
+          {
+            width:"42px",
+            height:"42px",
+            background:"rgba(249,115,22,.86)",
+            border:"2px solid white",
+            borderRadius:"50%",
+            color:"#fff",
+            textAlign:"center",
+            fontSize:"12px",
+            fontWeight:"900",
+            lineHeight:"38px",
+            boxShadow:"0 3px 10px rgba(15,45,47,.22)"
+          }
+        ]
+      });
+
+    try {
+      state.roadviewOverlay =
+        new kakao.maps.RoadviewOverlay();
+    } catch {
+      state.roadviewOverlay = null;
+    }
+
+    bindEvents();
+    updateSidebarButton();
+
+    await loadRows();
+
+    document.documentElement
+      .style.visibility = "visible";
+  }
+
+  if (window.kakao?.maps) {
+    kakao.maps.load(
+      () => {
+        init()
+          .catch(error => {
+            console.error(error);
+            dom.loading.classList.add(
+              "hide"
+            );
+
+            document.documentElement
+              .style.visibility = "visible";
+
+            showToast(
+              error?.message ||
+              String(error),
+              true
+            );
+          });
+      }
+    );
+  } else {
+    document.documentElement
+      .style.visibility = "visible";
+
+    dom.loading.classList.add(
+      "hide"
+    );
+
+    showToast(
+      "카카오 지도 SDK를 불러오지 못했습니다.",
+      true
+    );
+  }
+})();
+</script>
+</body>
+</html>
