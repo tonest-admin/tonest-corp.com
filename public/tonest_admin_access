@@ -1,0 +1,1549 @@
+const ALLOWED_ORIGINS = new Set([
+  "https://tonest-corp.com",
+  "https://www.tonest-corp.com"
+]);
+
+const VALID_ROLES = new Set([
+  "super_admin",
+  "admin",
+  "team_leader",
+  "driver"
+]);
+
+const VALID_STATUSES = new Set([
+  "pending",
+  "active",
+  "suspended",
+  "rejected"
+]);
+
+function corsHeaders(request) {
+  const origin = request.headers.get("Origin") || "";
+
+  return {
+    "Access-Control-Allow-Origin":
+      ALLOWED_ORIGINS.has(origin)
+        ? origin
+        : "https://tonest-corp.com",
+    "Access-Control-Allow-Methods":
+      "GET,POST,OPTIONS,HEAD",
+    "Access-Control-Allow-Headers":
+      "Content-Type,Authorization",
+    "Access-Control-Max-Age":"86400",
+    "Vary":"Origin"
+  };
+}
+
+function isAllowedOrigin(request) {
+  const origin = request.headers.get("Origin");
+  return !origin || ALLOWED_ORIGINS.has(origin);
+}
+
+function json(request, data, status = 200) {
+  return new Response(
+    JSON.stringify(data),
+    {
+      status,
+      headers:{
+        ...corsHeaders(request),
+        "Content-Type":"application/json; charset=utf-8",
+        "Cache-Control":"no-store"
+      }
+    }
+  );
+}
+
+function publicSupabaseKey(env) {
+  return String(
+    env.SUPABASE_PUBLISHABLE_KEY ||
+    env.SUPABASE_ANON_KEY ||
+    ""
+  ).trim();
+}
+
+function serviceSupabaseKey(env) {
+  return String(
+    env.SUPABASE_SERVICE_ROLE ||
+    env.SUPABASE_SECRET_KEY ||
+    ""
+  ).trim();
+}
+
+function supabaseUrl(env) {
+  return String(
+    env.SUPABASE_URL || ""
+  )
+    .trim()
+    .replace(/\/+$/,"");
+}
+
+function normalizeEmail(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase();
+}
+
+function cleanText(value, maxLength) {
+  return String(value || "")
+    .trim()
+    .slice(0,maxLength);
+}
+
+function bearerToken(request) {
+  const header =
+    request.headers.get("Authorization") || "";
+
+  const match =
+    header.match(/^Bearer\s+(.+)$/i);
+
+  return match
+    ? match[1].trim()
+    : "";
+}
+
+function httpError(status,message) {
+  const error = new Error(message);
+  error.status = status;
+  return error;
+}
+
+function mapSignupError(payload,status) {
+  const code = String(
+    payload?.code ||
+    payload?.error_code ||
+    ""
+  ).toLowerCase();
+
+  const message = String(
+    payload?.msg ||
+    payload?.message ||
+    payload?.error_description ||
+    ""
+  );
+
+  if(
+    code.includes("user_already_exists") ||
+    /already registered|already exists/i.test(message)
+  ){
+    return "이미 가입된 이메일입니다.";
+  }
+
+  if(
+    /password/i.test(message) &&
+    /weak|short|least/i.test(message)
+  ){
+    return "비밀번호 조건을 확인해주세요.";
+  }
+
+  if(status === 429){
+    return "가입 요청이 너무 많습니다. 잠시 후 다시 시도해주세요.";
+  }
+
+  return message ||
+    "회원가입 처리 중 오류가 발생했습니다.";
+}
+
+async function publicAuthFetch(
+  env,
+  path,
+  options = {}
+) {
+  const base = supabaseUrl(env);
+  const key = publicSupabaseKey(env);
+
+  if(!base || !key){
+    throw new Error(
+      "Supabase 공개 설정이 누락되었습니다."
+    );
+  }
+
+  const headers =
+    new Headers(options.headers || {});
+
+  headers.set("apikey",key);
+
+  if(options.body && !headers.has("Content-Type")){
+    headers.set(
+      "Content-Type",
+      "application/json"
+    );
+  }
+
+  return fetch(
+    base + path,
+    {
+      ...options,
+      headers
+    }
+  );
+}
+
+async function serviceAuthFetch(
+  env,
+  path,
+  options = {}
+) {
+  const base = supabaseUrl(env);
+  const key = serviceSupabaseKey(env);
+
+  if(!base || !key){
+    throw new Error(
+      "Supabase Service Role 설정이 누락되었습니다."
+    );
+  }
+
+  const headers =
+    new Headers(options.headers || {});
+
+  headers.set("apikey",key);
+  headers.set(
+    "Authorization",
+    "Bearer " + key
+  );
+
+  if(options.body && !headers.has("Content-Type")){
+    headers.set(
+      "Content-Type",
+      "application/json"
+    );
+  }
+
+  return fetch(
+    base + path,
+    {
+      ...options,
+      headers
+    }
+  );
+}
+
+async function restServiceFetch(
+  env,
+  path,
+  options = {}
+) {
+  const base = supabaseUrl(env);
+  const key = serviceSupabaseKey(env);
+
+  if(!base || !key){
+    throw new Error(
+      "Supabase Service Role 설정이 누락되었습니다."
+    );
+  }
+
+  const headers =
+    new Headers(options.headers || {});
+
+  headers.set("apikey",key);
+  headers.set(
+    "Authorization",
+    "Bearer " + key
+  );
+
+  if(options.body && !headers.has("Content-Type")){
+    headers.set(
+      "Content-Type",
+      "application/json"
+    );
+  }
+
+  return fetch(
+    base + "/rest/v1" + path,
+    {
+      ...options,
+      headers
+    }
+  );
+}
+
+async function getSessionUser(request,env) {
+  const token = bearerToken(request);
+
+  if(!token){
+    return null;
+  }
+
+  const response =
+    await publicAuthFetch(
+      env,
+      "/auth/v1/user",
+      {
+        headers:{
+          "Authorization":"Bearer " + token
+        }
+      }
+    );
+
+  if(!response.ok){
+    return null;
+  }
+
+  return response.json();
+}
+
+async function getProfileByUserId(env,userId) {
+  const response =
+    await restServiceFetch(
+      env,
+      "/profiles" +
+      "?select=user_id,email,display_name,role,status,approved_at,approved_by,created_at,updated_at" +
+      "&user_id=eq." +
+      encodeURIComponent(userId) +
+      "&limit=1"
+    );
+
+  if(!response.ok){
+    throw new Error(
+      "프로필 조회 실패: " +
+      await response.text()
+    );
+  }
+
+  const rows =
+    await response.json();
+
+  return rows?.[0] || null;
+}
+
+async function getAllProfiles(env) {
+  const response =
+    await restServiceFetch(
+      env,
+      "/profiles" +
+      "?select=user_id,email,display_name,role,status,approved_at,approved_by,created_at,updated_at" +
+      "&order=created_at.desc"
+    );
+
+  if(!response.ok){
+    throw new Error(
+      "프로필 목록 조회 실패: " +
+      await response.text()
+    );
+  }
+
+  return response.json();
+}
+
+async function requireSuperAdmin(request,env) {
+  const user =
+    await getSessionUser(
+      request,
+      env
+    );
+
+  if(!user?.id){
+    throw httpError(
+      401,
+      "로그인이 필요합니다."
+    );
+  }
+
+  const profile =
+    await getProfileByUserId(
+      env,
+      user.id
+    );
+
+  if(
+    !profile ||
+    profile.status !== "active" ||
+    profile.role !== "super_admin"
+  ){
+    throw httpError(
+      403,
+      "최고관리자 권한이 필요합니다."
+    );
+  }
+
+  return {
+    user,
+    profile
+  };
+}
+
+async function adminGetUser(env,userId) {
+  const response =
+    await serviceAuthFetch(
+      env,
+      "/auth/v1/admin/users/" +
+      encodeURIComponent(userId)
+    );
+
+  const payload =
+    await response
+      .json()
+      .catch(() => ({}));
+
+  if(!response.ok){
+    throw httpError(
+      response.status,
+      payload?.msg ||
+      payload?.message ||
+      "Auth 사용자 조회에 실패했습니다."
+    );
+  }
+
+  return payload?.user || payload;
+}
+
+async function adminListUsers(env) {
+  const all = [];
+  const perPage = 1000;
+
+  for(let page = 1; page <= 10; page += 1){
+    const response =
+      await serviceAuthFetch(
+        env,
+        "/auth/v1/admin/users" +
+        "?page=" + page +
+        "&per_page=" + perPage
+      );
+
+    const payload =
+      await response
+        .json()
+        .catch(() => ({}));
+
+    if(!response.ok){
+      throw httpError(
+        response.status,
+        payload?.msg ||
+        payload?.message ||
+        "Auth 사용자 목록 조회에 실패했습니다."
+      );
+    }
+
+    const users =
+      Array.isArray(payload)
+        ? payload
+        : (
+          Array.isArray(payload?.users)
+            ? payload.users
+            : []
+        );
+
+    all.push(...users);
+
+    if(users.length < perPage){
+      break;
+    }
+  }
+
+  return all;
+}
+
+async function ensureProfile(env,authUser) {
+  const existing =
+    await getProfileByUserId(
+      env,
+      authUser.id
+    );
+
+  if(existing){
+    return existing;
+  }
+
+  const metadata =
+    authUser.user_metadata || {};
+
+  const displayName =
+    cleanText(
+      metadata.display_name ||
+      metadata.full_name ||
+      metadata.name ||
+      "",
+      50
+    ) || null;
+
+  const response =
+    await restServiceFetch(
+      env,
+      "/profiles" +
+      "?on_conflict=user_id",
+      {
+        method:"POST",
+        headers:{
+          "Prefer":
+            "resolution=merge-duplicates,return=representation"
+        },
+        body:JSON.stringify({
+          user_id:authUser.id,
+          email:normalizeEmail(authUser.email),
+          display_name:displayName,
+          role:"driver",
+          status:"pending"
+        })
+      }
+    );
+
+  if(!response.ok){
+    throw new Error(
+      "누락 프로필 생성 실패: " +
+      await response.text()
+    );
+  }
+
+  const rows =
+    await response.json();
+
+  return rows?.[0] || null;
+}
+
+function mergedAdminUser(authUser,profile) {
+  const metadata =
+    authUser?.user_metadata || {};
+
+  const emailConfirmedAt =
+    authUser?.email_confirmed_at ||
+    authUser?.confirmed_at ||
+    null;
+
+  return {
+    user_id:authUser?.id || profile?.user_id || "",
+    email:
+      normalizeEmail(
+        authUser?.email ||
+        profile?.email ||
+        ""
+      ),
+    display_name:
+      profile?.display_name ||
+      metadata.display_name ||
+      metadata.full_name ||
+      metadata.name ||
+      "",
+    role:
+      profile?.role ||
+      "driver",
+    status:
+      profile?.status ||
+      "pending",
+    approved_at:
+      profile?.approved_at ||
+      null,
+    approved_by:
+      profile?.approved_by ||
+      null,
+    profile_created_at:
+      profile?.created_at ||
+      null,
+    profile_updated_at:
+      profile?.updated_at ||
+      null,
+    auth_created_at:
+      authUser?.created_at ||
+      null,
+    last_sign_in_at:
+      authUser?.last_sign_in_at ||
+      null,
+    email_confirmed_at:
+      emailConfirmedAt,
+    email_confirmed:
+      !!emailConfirmedAt,
+    banned_until:
+      authUser?.banned_until ||
+      null,
+    profile_missing:
+      !profile
+  };
+}
+
+async function handleAdminMe(request,env) {
+  const context =
+    await requireSuperAdmin(
+      request,
+      env
+    );
+
+  return json(
+    request,
+    {
+      ok:true,
+      user:{
+        id:context.user.id,
+        email:context.user.email || ""
+      },
+      profile:context.profile
+    }
+  );
+}
+
+async function handleAdminUsers(request,env) {
+  await requireSuperAdmin(
+    request,
+    env
+  );
+
+  const url =
+    new URL(request.url);
+
+  const query =
+    cleanText(
+      url.searchParams.get("q"),
+      120
+    ).toLowerCase();
+
+  const roleFilter =
+    cleanText(
+      url.searchParams.get("role"),
+      30
+    );
+
+  const statusFilter =
+    cleanText(
+      url.searchParams.get("status"),
+      30
+    );
+
+  const emailState =
+    cleanText(
+      url.searchParams.get("email_state"),
+      30
+    );
+
+  const [
+    authUsers,
+    profiles
+  ] = await Promise.all([
+    adminListUsers(env),
+    getAllProfiles(env)
+  ]);
+
+  const profileMap =
+    new Map(
+      profiles.map(
+        profile => [
+          String(profile.user_id),
+          profile
+        ]
+      )
+    );
+
+  let rows =
+    authUsers.map(authUser =>
+      mergedAdminUser(
+        authUser,
+        profileMap.get(
+          String(authUser.id)
+        ) || null
+      )
+    );
+
+  if(query){
+    rows =
+      rows.filter(row =>
+        [
+          row.display_name,
+          row.email,
+          row.user_id
+        ]
+          .some(value =>
+            String(value || "")
+              .toLowerCase()
+              .includes(query)
+          )
+      );
+  }
+
+  if(
+    roleFilter &&
+    VALID_ROLES.has(roleFilter)
+  ){
+    rows =
+      rows.filter(
+        row => row.role === roleFilter
+      );
+  }
+
+  if(
+    statusFilter &&
+    VALID_STATUSES.has(statusFilter)
+  ){
+    rows =
+      rows.filter(
+        row => row.status === statusFilter
+      );
+  }
+
+  if(emailState === "confirmed"){
+    rows =
+      rows.filter(
+        row => row.email_confirmed
+      );
+  }
+
+  if(emailState === "unconfirmed"){
+    rows =
+      rows.filter(
+        row => !row.email_confirmed
+      );
+  }
+
+  rows.sort((a,b) => {
+    const statusRank = {
+      pending:0,
+      active:1,
+      suspended:2,
+      rejected:3
+    };
+
+    const ar =
+      statusRank[a.status] ?? 9;
+
+    const br =
+      statusRank[b.status] ?? 9;
+
+    if(ar !== br){
+      return ar - br;
+    }
+
+    return String(a.display_name || a.email)
+      .localeCompare(
+        String(b.display_name || b.email),
+        "ko",
+        {
+          numeric:true,
+          sensitivity:"base"
+        }
+      );
+  });
+
+  const allMerged =
+    authUsers.map(authUser =>
+      mergedAdminUser(
+        authUser,
+        profileMap.get(
+          String(authUser.id)
+        ) || null
+      )
+    );
+
+  const stats = {
+    total:allMerged.length,
+    pending:
+      allMerged.filter(
+        row => row.status === "pending"
+      ).length,
+    active:
+      allMerged.filter(
+        row => row.status === "active"
+      ).length,
+    suspended:
+      allMerged.filter(
+        row => row.status === "suspended"
+      ).length,
+    rejected:
+      allMerged.filter(
+        row => row.status === "rejected"
+      ).length,
+    unconfirmed:
+      allMerged.filter(
+        row => !row.email_confirmed
+      ).length
+  };
+
+  return json(
+    request,
+    {
+      ok:true,
+      rows,
+      stats
+    }
+  );
+}
+
+async function activeSuperAdminCount(env) {
+  const response =
+    await restServiceFetch(
+      env,
+      "/profiles" +
+      "?select=user_id" +
+      "&role=eq.super_admin" +
+      "&status=eq.active"
+    );
+
+  if(!response.ok){
+    throw new Error(
+      "최고관리자 수 확인 실패: " +
+      await response.text()
+    );
+  }
+
+  return (
+    await response.json()
+  ).length;
+}
+
+async function updateProfileRoleStatus(
+  env,
+  actor,
+  targetAuthUser,
+  role,
+  status
+) {
+  let profile =
+    await ensureProfile(
+      env,
+      targetAuthUser
+    );
+
+  const currentRole =
+    profile?.role || "driver";
+
+  const currentStatus =
+    profile?.status || "pending";
+
+  if(
+    targetAuthUser.id === actor.user.id &&
+    (
+      role !== "super_admin" ||
+      status !== "active"
+    )
+  ){
+    throw httpError(
+      409,
+      "현재 로그인 중인 최고관리자 본인은 강등하거나 정지할 수 없습니다."
+    );
+  }
+
+  if(
+    currentRole === "super_admin" &&
+    currentStatus === "active" &&
+    (
+      role !== "super_admin" ||
+      status !== "active"
+    )
+  ){
+    const count =
+      await activeSuperAdminCount(env);
+
+    if(count <= 1){
+      throw httpError(
+        409,
+        "마지막 최고관리자 계정은 강등하거나 비활성화할 수 없습니다."
+      );
+    }
+  }
+
+  const patch = {
+    role,
+    status,
+    email:normalizeEmail(targetAuthUser.email)
+  };
+
+  if(status === "active"){
+    patch.approved_at =
+      new Date().toISOString();
+
+    patch.approved_by =
+      actor.user.id;
+  }else if(
+    status === "pending" ||
+    status === "rejected"
+  ){
+    patch.approved_at = null;
+    patch.approved_by = null;
+  }
+
+  const response =
+    await restServiceFetch(
+      env,
+      "/profiles" +
+      "?user_id=eq." +
+      encodeURIComponent(targetAuthUser.id),
+      {
+        method:"PATCH",
+        headers:{
+          "Prefer":"return=representation"
+        },
+        body:JSON.stringify(patch)
+      }
+    );
+
+  if(!response.ok){
+    throw new Error(
+      "프로필 권한 변경 실패: " +
+      await response.text()
+    );
+  }
+
+  const rows =
+    await response.json();
+
+  return rows?.[0] || null;
+}
+
+async function forceConfirmEmail(
+  env,
+  userId
+) {
+  const response =
+    await serviceAuthFetch(
+      env,
+      "/auth/v1/admin/users/" +
+      encodeURIComponent(userId),
+      {
+        method:"PUT",
+        body:JSON.stringify({
+          email_confirm:true
+        })
+      }
+    );
+
+  const payload =
+    await response
+      .json()
+      .catch(() => ({}));
+
+  if(!response.ok){
+    throw httpError(
+      response.status,
+      payload?.msg ||
+      payload?.message ||
+      "이메일 강제 인증에 실패했습니다."
+    );
+  }
+
+  return payload?.user || payload;
+}
+
+async function handleAdminApply(
+  request,
+  env
+) {
+  const actor =
+    await requireSuperAdmin(
+      request,
+      env
+    );
+
+  let body;
+
+  try{
+    body =
+      await request.json();
+  }catch{
+    throw httpError(
+      400,
+      "잘못된 요청 형식입니다."
+    );
+  }
+
+  const userId =
+    cleanText(
+      body?.user_id,
+      80
+    );
+
+  const role =
+    cleanText(
+      body?.role,
+      30
+    );
+
+  const status =
+    cleanText(
+      body?.status,
+      30
+    );
+
+  const confirmEmail =
+    body?.confirm_email === true;
+
+  if(!userId){
+    throw httpError(
+      400,
+      "대상 user_id가 없습니다."
+    );
+  }
+
+  if(!VALID_ROLES.has(role)){
+    throw httpError(
+      400,
+      "허용되지 않은 권한입니다."
+    );
+  }
+
+  if(!VALID_STATUSES.has(status)){
+    throw httpError(
+      400,
+      "허용되지 않은 계정 상태입니다."
+    );
+  }
+
+  let authUser =
+    await adminGetUser(
+      env,
+      userId
+    );
+
+  /*
+   * 사용자가 요청한 "강제 메일 확인".
+   * Service Role이 있는 Worker에서만 실행.
+   */
+  if(
+    confirmEmail &&
+    !(
+      authUser.email_confirmed_at ||
+      authUser.confirmed_at
+    )
+  ){
+    authUser =
+      await forceConfirmEmail(
+        env,
+        userId
+      );
+  }
+
+  const profile =
+    await updateProfileRoleStatus(
+      env,
+      actor,
+      authUser,
+      role,
+      status
+    );
+
+  return json(
+    request,
+    {
+      ok:true,
+      user:
+        mergedAdminUser(
+          authUser,
+          profile
+        )
+    }
+  );
+}
+
+async function handleAdminConfirmEmail(
+  request,
+  env
+) {
+  await requireSuperAdmin(
+    request,
+    env
+  );
+
+  let body;
+
+  try{
+    body =
+      await request.json();
+  }catch{
+    throw httpError(
+      400,
+      "잘못된 요청 형식입니다."
+    );
+  }
+
+  const userId =
+    cleanText(
+      body?.user_id,
+      80
+    );
+
+  if(!userId){
+    throw httpError(
+      400,
+      "대상 user_id가 없습니다."
+    );
+  }
+
+  const current =
+    await adminGetUser(
+      env,
+      userId
+    );
+
+  if(
+    current.email_confirmed_at ||
+    current.confirmed_at
+  ){
+    return json(
+      request,
+      {
+        ok:true,
+        already_confirmed:true,
+        user:
+          mergedAdminUser(
+            current,
+            await ensureProfile(
+              env,
+              current
+            )
+          )
+      }
+    );
+  }
+
+  const updated =
+    await forceConfirmEmail(
+      env,
+      userId
+    );
+
+  return json(
+    request,
+    {
+      ok:true,
+      already_confirmed:false,
+      user:
+        mergedAdminUser(
+          updated,
+          await ensureProfile(
+            env,
+            updated
+          )
+        )
+    }
+  );
+}
+
+async function handleAuthConfig(request,env) {
+  const url =
+    supabaseUrl(env);
+
+  const key =
+    publicSupabaseKey(env);
+
+  if(!url || !key){
+    return json(
+      request,
+      {
+        ok:false,
+        message:
+          "Supabase 공개 설정이 누락되었습니다."
+      },
+      500
+    );
+  }
+
+  return json(
+    request,
+    {
+      ok:true,
+      supabaseUrl:url,
+      supabaseKey:key
+    }
+  );
+}
+
+async function handleSignup(request,env) {
+  if(!isAllowedOrigin(request)){
+    return json(
+      request,
+      {
+        ok:false,
+        message:
+          "허용되지 않은 요청입니다."
+      },
+      403
+    );
+  }
+
+  const base =
+    supabaseUrl(env);
+
+  const key =
+    publicSupabaseKey(env);
+
+  if(!base || !key){
+    return json(
+      request,
+      {
+        ok:false,
+        message:
+          "Supabase 설정이 누락되었습니다."
+      },
+      500
+    );
+  }
+
+  let body;
+
+  try{
+    body =
+      await request.json();
+  }catch{
+    return json(
+      request,
+      {
+        ok:false,
+        message:
+          "잘못된 요청 형식입니다."
+      },
+      400
+    );
+  }
+
+  const displayName =
+    cleanText(
+      body?.display_name,
+      50
+    );
+
+  const email =
+    normalizeEmail(
+      body?.email
+    );
+
+  const password =
+    String(
+      body?.password || ""
+    );
+
+  if(!displayName){
+    return json(
+      request,
+      {
+        ok:false,
+        message:
+          "이름을 입력해주세요."
+      },
+      400
+    );
+  }
+
+  if(
+    !email ||
+    !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+  ){
+    return json(
+      request,
+      {
+        ok:false,
+        message:
+          "올바른 이메일 주소를 입력해주세요."
+      },
+      400
+    );
+  }
+
+  if(password.length < 8){
+    return json(
+      request,
+      {
+        ok:false,
+        message:
+          "비밀번호는 8자 이상 입력해주세요."
+      },
+      400
+    );
+  }
+
+  const redirectTo =
+    "https://tonest-corp.com/signup?verified=1";
+
+  const signupUrl =
+    base +
+    "/auth/v1/signup?redirect_to=" +
+    encodeURIComponent(
+      redirectTo
+    );
+
+  const signupResponse =
+    await fetch(
+      signupUrl,
+      {
+        method:"POST",
+        headers:{
+          "Content-Type":"application/json",
+          "apikey":key,
+          "Authorization":"Bearer " + key
+        },
+        body:JSON.stringify({
+          email,
+          password,
+          data:{
+            display_name:displayName,
+            full_name:displayName,
+            name:displayName
+          }
+        })
+      }
+    );
+
+  const payload =
+    await signupResponse
+      .json()
+      .catch(() => ({}));
+
+  if(!signupResponse.ok){
+    return json(
+      request,
+      {
+        ok:false,
+        message:
+          mapSignupError(
+            payload,
+            signupResponse.status
+          )
+      },
+      signupResponse.status
+    );
+  }
+
+  const requiresEmailConfirmation =
+    !payload?.access_token &&
+    !payload?.refresh_token;
+
+  return json(
+    request,
+    {
+      ok:true,
+      requiresEmailConfirmation,
+      message:
+        requiresEmailConfirmation
+          ? "가입 요청이 완료되었습니다. 이메일 인증 후 관리자 승인을 기다려주세요."
+          : "가입 요청이 완료되었습니다. 관리자 승인을 기다려주세요."
+    }
+  );
+}
+
+async function asHtml(response) {
+  const body =
+    await response.text();
+
+  const headers =
+    new Headers(
+      response.headers
+    );
+
+  headers.set(
+    "Content-Type",
+    "text/html; charset=utf-8"
+  );
+
+  headers.set(
+    "Cache-Control",
+    "no-store, no-cache, must-revalidate"
+  );
+
+  headers.set(
+    "Pragma",
+    "no-cache"
+  );
+
+  headers.delete(
+    "Content-Length"
+  );
+
+  return new Response(
+    body,
+    {
+      status:response.status,
+      headers
+    }
+  );
+}
+
+export default {
+  async fetch(request,env) {
+    try{
+      const url =
+        new URL(request.url);
+
+      const path =
+        url.pathname
+          .replace(/\/+$/,"")
+        || "/";
+
+      if(
+        request.method === "OPTIONS"
+      ){
+        if(!isAllowedOrigin(request)){
+          return new Response(
+            null,
+            {status:403}
+          );
+        }
+
+        return new Response(
+          null,
+          {
+            status:204,
+            headers:
+              corsHeaders(request)
+          }
+        );
+      }
+
+      if(
+        path === "/health" &&
+        request.method === "GET"
+      ){
+        return json(
+          request,
+          {
+            ok:true,
+            service:"tonest-login",
+            frontend:"cloudflare-assets",
+            adminApi:true,
+            forceEmailConfirm:true,
+            assetsBinding:
+              !!env.ASSETS &&
+              typeof env.ASSETS.fetch === "function",
+            time:
+              new Date().toISOString()
+          }
+        );
+      }
+
+      if(
+        path === "/auth-config" &&
+        request.method === "GET"
+      ){
+        return handleAuthConfig(
+          request,
+          env
+        );
+      }
+
+      if(
+        path === "/signup" &&
+        request.method === "POST"
+      ){
+        return handleSignup(
+          request,
+          env
+        );
+      }
+
+      if(
+        path === "/admin/me" &&
+        request.method === "GET"
+      ){
+        return handleAdminMe(
+          request,
+          env
+        );
+      }
+
+      if(
+        path === "/admin/users" &&
+        request.method === "GET"
+      ){
+        return handleAdminUsers(
+          request,
+          env
+        );
+      }
+
+      if(
+        path === "/admin/user/apply" &&
+        request.method === "POST"
+      ){
+        return handleAdminApply(
+          request,
+          env
+        );
+      }
+
+      if(
+        path === "/admin/user/confirm-email" &&
+        request.method === "POST"
+      ){
+        return handleAdminConfirmEmail(
+          request,
+          env
+        );
+      }
+
+      if(
+        !env.ASSETS ||
+        typeof env.ASSETS.fetch !== "function"
+      ){
+        return new Response(
+          "ASSETS binding missing",
+          {
+            status:500,
+            headers:{
+              "Content-Type":
+                "text/plain; charset=utf-8",
+              "Cache-Control":"no-store"
+            }
+          }
+        );
+      }
+
+      /*
+       * public/ 전체를 Cloudflare Assets로 서비스.
+       * 확장자 없는 public 파일은 그대로 URL로 사용.
+       *
+       * public/index.html   -> /
+       * public/signup       -> /signup
+       * public/home         -> /home
+       * public/tonest_info  -> /tonest_info
+       * public/admin_access -> /admin_access
+       */
+
+      if(path === "/"){
+        url.pathname =
+          "/index.html";
+      }
+
+      const assetRequest =
+        new Request(
+          url.toString(),
+          request
+        );
+
+      const response =
+        await env.ASSETS.fetch(
+          assetRequest
+        );
+
+      if(!response.ok){
+        return response;
+      }
+
+      const fileName =
+        path === "/"
+          ? "index.html"
+          : (
+            path
+              .split("/")
+              .filter(Boolean)
+              .pop() ||
+            ""
+          );
+
+      const isHtml =
+        path === "/" ||
+        !fileName.includes(".") ||
+        fileName
+          .toLowerCase()
+          .endsWith(".html");
+
+      if(isHtml){
+        return asHtml(
+          response
+        );
+      }
+
+      return response;
+
+    }catch(error){
+      console.error(
+        "TONEST LOGIN WORKER ERROR",
+        error
+      );
+
+      return json(
+        request,
+        {
+          ok:false,
+          message:
+            error?.message ||
+            "서버 처리 중 오류가 발생했습니다."
+        },
+        Number(
+          error?.status ||
+          500
+        )
+      );
+    }
+  }
+};
