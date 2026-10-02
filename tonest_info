@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <title>TO:NEST 정보</title>
-  <link rel="icon" href="/favicon.ico?v=4" type="image/x-icon">
+  <link rel="icon" href="/favicon.ico?v=5" type="image/x-icon">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
     :root{
@@ -19,7 +19,7 @@
     .wrap{width:min(1500px,100%);margin:auto;padding:12px}
     .card{background:#fff;border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow)}
     .top{display:flex;align-items:center;gap:10px;padding:12px 14px;margin-bottom:10px}
-    .logo{width:34px;height:34px;object-fit:contain}
+    .menuLogoBtn{width:38px;height:38px;padding:0;border:0;background:#fff;border-radius:10px;display:grid;place-items:center;cursor:pointer}.logo{width:34px;height:34px;object-fit:contain}
     .title{font-size:20px;font-weight:800}.sub{font-size:11px;color:var(--muted);margin-top:2px}
     .grow{flex:1}.pill{padding:8px 11px;border:1px solid var(--line2);border-radius:999px;font-size:11px;color:#526466}
     .btn{height:36px;padding:0 12px;border:1px solid var(--line2);border-radius:10px;background:#fff;color:#334345;cursor:pointer;font-weight:700}
@@ -38,11 +38,12 @@
     .empty{padding:30px;text-align:center;color:var(--muted)}
     @media(max-width:760px){.wrap{padding:6px}.top{border-radius:0}.pill{display:none}.toolbar{flex-wrap:wrap}.toolbar input{min-width:0;flex:1}}
   </style>
+  <script src="/board-menu.js?v=1" defer></script>
 </head>
 <body>
 <div class="wrap">
   <header class="card top">
-    <img class="logo" src="/logo.png" alt="TO:NEST">
+    <button id="tnBoardMenuToggle" class="menuLogoBtn" type="button" aria-label="TO:NEST 메뉴 열기"><img class="logo" src="/logo.png" alt="TO:NEST"></button>
     <div>
       <div class="title">TO:NEST 정보</div>
       <div class="sub">인사 · 운영 기본정보 관리</div>
@@ -81,7 +82,7 @@
 
 <script>
 (() => {
-  const AUTH_WORKER = "https://login.tonest-admin.workers.dev";
+  const AUTH_WORKER = location.origin;
   const INFO_WORKER = "https://tonest-info.tonest-admin.workers.dev";
 
   const state = {
