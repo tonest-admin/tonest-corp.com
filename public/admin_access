@@ -1,1549 +1,2039 @@
-const ALLOWED_ORIGINS = new Set([
-  "https://tonest-corp.com",
-  "https://www.tonest-corp.com"
-]);
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="referrer" content="origin">
 
-const VALID_ROLES = new Set([
-  "super_admin",
-  "admin",
-  "team_leader",
-  "driver"
-]);
+  <title>TO:NEST 계정 · 권한 관리</title>
 
-const VALID_STATUSES = new Set([
-  "pending",
-  "active",
-  "suspended",
-  "rejected"
-]);
+  <link rel="icon" type="image/x-icon" href="/favicon.ico?v=8">
+  <link rel="shortcut icon" type="image/x-icon" href="/favicon.ico?v=8">
 
-function corsHeaders(request) {
-  const origin = request.headers.get("Origin") || "";
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="/board-menu.js?v=3" defer></script>
 
-  return {
-    "Access-Control-Allow-Origin":
-      ALLOWED_ORIGINS.has(origin)
-        ? origin
-        : "https://tonest-corp.com",
-    "Access-Control-Allow-Methods":
-      "GET,POST,OPTIONS,HEAD",
-    "Access-Control-Allow-Headers":
-      "Content-Type,Authorization",
-    "Access-Control-Max-Age":"86400",
-    "Vary":"Origin"
-  };
-}
+  <style>
+    :root{
+      --bg:#f3f8f7;
+      --card:#fff;
+      --line:#d9e6e4;
+      --line2:#edf3f2;
+      --text:#172124;
+      --muted:#6b7c7e;
 
-function isAllowedOrigin(request) {
-  const origin = request.headers.get("Origin");
-  return !origin || ALLOWED_ORIGINS.has(origin);
-}
+      --primary:#16a7a4;
+      --primary2:#118b89;
+      --primarySoft:#eaf8f6;
 
-function json(request, data, status = 200) {
-  return new Response(
-    JSON.stringify(data),
-    {
-      status,
-      headers:{
-        ...corsHeaders(request),
-        "Content-Type":"application/json; charset=utf-8",
-        "Cache-Control":"no-store"
+      --green:#15803d;
+      --greenSoft:#effcf3;
+      --amber:#a16207;
+      --amberSoft:#fff9e8;
+      --red:#dc2626;
+      --redSoft:#fff2f2;
+      --blue:#2563eb;
+      --blueSoft:#eff6ff;
+      --purple:#7c3aed;
+      --purpleSoft:#f5f3ff;
+
+      --shadow:0 16px 42px rgba(15,45,47,.08);
+      --shadow2:0 8px 24px rgba(15,45,47,.055);
+
+      --font:"Pretendard Variable","Pretendard","Noto Sans KR",system-ui,-apple-system,"Segoe UI",sans-serif;
+    }
+
+    *{box-sizing:border-box}
+
+    html,body{
+      margin:0;
+      min-height:100%;
+      font-family:var(--font);
+      color:var(--text);
+      background:
+        radial-gradient(circle at 12% 0%,rgba(22,167,164,.08),transparent 28%),
+        radial-gradient(circle at 88% 0%,rgba(17,139,137,.06),transparent 30%),
+        linear-gradient(180deg,#fff 0%,var(--bg) 76%,#edf5f3 100%);
+      -webkit-font-smoothing:antialiased;
+    }
+
+    body{
+      padding:10px 12px 44px;
+    }
+
+    button,input,select{
+      font:inherit;
+    }
+
+    button{
+      cursor:pointer;
+    }
+
+    .page{
+      width:100%;
+      max-width:none;
+      margin:0 auto;
+    }
+
+    .topbar{
+      position:sticky;
+      top:8px;
+      z-index:30;
+      width:100%;
+      display:flex;
+      align-items:center;
+      gap:10px;
+      padding:10px 12px;
+      border:1px solid var(--line);
+      border-radius:19px;
+      background:rgba(255,255,255,.97);
+      box-shadow:var(--shadow2);
+      backdrop-filter:blur(14px);
+    }
+
+    .brandButton{
+      width:42px;
+      height:42px;
+      flex:0 0 42px;
+      display:grid;
+      place-items:center;
+      padding:0;
+      border:0;
+      border-radius:12px;
+      background:#fff;
+    }
+
+    .brandButton:hover{
+      background:var(--primarySoft);
+    }
+
+    .brandButton img{
+      width:36px;
+      height:36px;
+      object-fit:contain;
+    }
+
+    .brandText{
+      min-width:0;
+    }
+
+    .brandTitle{
+      font-size:19px;
+      line-height:1.1;
+      font-weight:850;
+      letter-spacing:-.04em;
+    }
+
+    .brandSub{
+      margin-top:4px;
+      color:var(--muted);
+      font-size:10.5px;
+      font-weight:650;
+    }
+
+    .spacer{
+      flex:1;
+    }
+
+    .sessionPill{
+      max-width:330px;
+      min-height:34px;
+      display:flex;
+      align-items:center;
+      padding:0 12px;
+      border:1px solid var(--line);
+      border-radius:999px;
+      background:#f8fbfa;
+      color:#49615f;
+      font-size:10.5px;
+      font-weight:750;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+
+    .btn{
+      min-height:36px;
+      padding:0 13px;
+      border:1px solid #cbd8d6;
+      border-radius:11px;
+      background:#fff;
+      color:#334745;
+      font-size:11px;
+      font-weight:780;
+      white-space:nowrap;
+    }
+
+    .btn:hover{
+      background:#f8fbfa;
+      border-color:#95cdc9;
+    }
+
+    .btn.primary{
+      color:#fff;
+      border-color:var(--primary);
+      background:linear-gradient(180deg,#22b7b2,#16a7a4);
+    }
+
+    .btn.green{
+      color:var(--green);
+      border-color:#bbf7d0;
+      background:var(--greenSoft);
+    }
+
+    .btn.amber{
+      color:var(--amber);
+      border-color:#fde68a;
+      background:var(--amberSoft);
+    }
+
+    .btn.red{
+      color:var(--red);
+      border-color:#fecaca;
+      background:var(--redSoft);
+    }
+
+    .btn.blue{
+      color:var(--blue);
+      border-color:#bfdbfe;
+      background:var(--blueSoft);
+    }
+
+    .btn.small{
+      min-height:31px;
+      padding:0 10px;
+      border-radius:9px;
+      font-size:10px;
+    }
+
+    .btn:disabled{
+      opacity:.5;
+      cursor:not-allowed;
+    }
+
+    .hero{
+      display:grid;
+      grid-template-columns:minmax(0,1.25fr) minmax(430px,.75fr);
+      gap:12px;
+      margin-top:12px;
+    }
+
+    .heroCard{
+      border:1px solid var(--line);
+      border-radius:20px;
+      background:rgba(255,255,255,.97);
+      box-shadow:var(--shadow);
+    }
+
+    .heroMain{
+      padding:21px 22px;
+      background:
+        linear-gradient(135deg,rgba(22,167,164,.06),transparent 48%),
+        #fff;
+    }
+
+    .kicker{
+      color:var(--primary2);
+      font-size:10.5px;
+      font-weight:850;
+      letter-spacing:.13em;
+    }
+
+    .heroTitle{
+      margin:6px 0 6px;
+      font-size:28px;
+      line-height:1.12;
+      font-weight:900;
+      letter-spacing:-.05em;
+    }
+
+    .heroDesc{
+      max-width:780px;
+      margin:0;
+      color:#607271;
+      font-size:12px;
+      line-height:1.7;
+      font-weight:600;
+    }
+
+    .heroNotice{
+      padding:18px;
+      display:flex;
+      flex-direction:column;
+      justify-content:center;
+    }
+
+    .noticeTitle{
+      font-size:13px;
+      font-weight:850;
+    }
+
+    .noticeBody{
+      margin-top:6px;
+      color:#657674;
+      font-size:11px;
+      line-height:1.6;
+      font-weight:600;
+    }
+
+    .noticeBadge{
+      width:max-content;
+      margin-top:11px;
+      padding:6px 9px;
+      border-radius:999px;
+      border:1px solid #fde68a;
+      background:var(--amberSoft);
+      color:var(--amber);
+      font-size:9.5px;
+      font-weight:800;
+    }
+
+    .stats{
+      display:grid;
+      grid-template-columns:repeat(5,minmax(0,1fr));
+      gap:10px;
+      margin-top:12px;
+    }
+
+    .stat{
+      position:relative;
+      overflow:hidden;
+      min-height:92px;
+      padding:14px 15px;
+      border:1px solid var(--line);
+      border-radius:16px;
+      background:#fff;
+      box-shadow:var(--shadow2);
+    }
+
+    .stat::after{
+      content:"";
+      position:absolute;
+      width:72px;
+      height:72px;
+      right:-26px;
+      bottom:-30px;
+      border-radius:50%;
+      background:rgba(22,167,164,.06);
+    }
+
+    .statLabel{
+      color:#687b79;
+      font-size:10px;
+      font-weight:750;
+    }
+
+    .statValue{
+      margin-top:8px;
+      font-size:26px;
+      line-height:1;
+      font-weight:900;
+      letter-spacing:-.04em;
+    }
+
+    .stat.pending .statValue{color:var(--amber)}
+    .stat.active .statValue{color:var(--green)}
+    .stat.unconfirmed .statValue{color:var(--red)}
+    .stat.suspended .statValue{color:var(--purple)}
+
+    .filterCard{
+      display:flex;
+      align-items:center;
+      gap:8px;
+      flex-wrap:wrap;
+      margin-top:12px;
+      padding:10px;
+      border:1px solid var(--line);
+      border-radius:16px;
+      background:#fff;
+      box-shadow:var(--shadow2);
+    }
+
+    .searchInput{
+      flex:1 1 300px;
+      min-width:230px;
+      height:38px;
+      padding:0 12px;
+      border:1px solid #cbd8d6;
+      border-radius:11px;
+      outline:none;
+      color:#263b39;
+      background:#fbfefd;
+      font-size:11.5px;
+      font-weight:650;
+    }
+
+    .searchInput:focus,
+    .filterSelect:focus{
+      border-color:#69c6c1;
+      box-shadow:0 0 0 3px rgba(22,167,164,.10);
+    }
+
+    .filterSelect{
+      width:150px;
+      height:38px;
+      padding:0 10px;
+      border:1px solid #cbd8d6;
+      border-radius:11px;
+      outline:none;
+      color:#334745;
+      background:#fff;
+      font-size:11px;
+      font-weight:700;
+    }
+
+    .statusLine{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      margin-top:10px;
+      padding:0 3px;
+      min-height:22px;
+    }
+
+    .statusText{
+      color:#657674;
+      font-size:10.5px;
+      font-weight:650;
+    }
+
+    .statusText.ok{color:var(--green)}
+    .statusText.err{color:var(--red)}
+    .statusText.warn{color:var(--amber)}
+
+    .resultCount{
+      color:#82918f;
+      font-size:10px;
+      font-weight:700;
+      white-space:nowrap;
+    }
+
+    .list{
+      display:grid;
+      gap:10px;
+      margin-top:6px;
+    }
+
+    .userCard{
+      display:grid;
+      grid-template-columns:minmax(280px,.92fr) minmax(400px,1.35fr) minmax(310px,.85fr);
+      gap:14px;
+      align-items:center;
+      padding:14px;
+      border:1px solid var(--line);
+      border-radius:17px;
+      background:#fff;
+      box-shadow:0 8px 24px rgba(15,45,47,.045);
+    }
+
+    .userCard.pending{
+      border-left:4px solid #f59e0b;
+    }
+
+    .userCard.suspended{
+      border-left:4px solid #8b5cf6;
+    }
+
+    .userCard.rejected{
+      border-left:4px solid #ef4444;
+    }
+
+    .userIdentity{
+      min-width:0;
+      display:flex;
+      align-items:flex-start;
+      gap:11px;
+    }
+
+    .avatar{
+      width:46px;
+      height:46px;
+      flex:0 0 46px;
+      display:grid;
+      place-items:center;
+      border-radius:14px;
+      background:
+        linear-gradient(145deg,#ddf5f2,#f8fffe);
+      border:1px solid #cde8e5;
+      color:var(--primary2);
+      font-size:17px;
+      font-weight:900;
+    }
+
+    .userName{
+      font-size:14px;
+      font-weight:850;
+      line-height:1.3;
+    }
+
+    .userEmail{
+      margin-top:3px;
+      color:#6a7b79;
+      font-size:10.5px;
+      font-weight:650;
+      word-break:break-all;
+    }
+
+    .badges{
+      display:flex;
+      align-items:center;
+      gap:5px;
+      flex-wrap:wrap;
+      margin-top:8px;
+    }
+
+    .badge{
+      display:inline-flex;
+      align-items:center;
+      min-height:22px;
+      padding:0 8px;
+      border:1px solid #e0e8e7;
+      border-radius:999px;
+      background:#f8fbfa;
+      color:#647674;
+      font-size:9px;
+      font-weight:800;
+    }
+
+    .badge.primary{
+      border-color:#bfe4e0;
+      background:var(--primarySoft);
+      color:var(--primary2);
+    }
+
+    .badge.green{
+      border-color:#bbf7d0;
+      background:var(--greenSoft);
+      color:var(--green);
+    }
+
+    .badge.amber{
+      border-color:#fde68a;
+      background:var(--amberSoft);
+      color:var(--amber);
+    }
+
+    .badge.red{
+      border-color:#fecaca;
+      background:var(--redSoft);
+      color:var(--red);
+    }
+
+    .badge.purple{
+      border-color:#ddd6fe;
+      background:var(--purpleSoft);
+      color:var(--purple);
+    }
+
+    .metaGrid{
+      display:grid;
+      grid-template-columns:repeat(3,minmax(0,1fr));
+      gap:7px;
+    }
+
+    .metaBox{
+      min-width:0;
+      min-height:56px;
+      padding:9px 10px;
+      border:1px solid var(--line2);
+      border-radius:11px;
+      background:#fbfefd;
+    }
+
+    .metaLabel{
+      color:#879694;
+      font-size:8.5px;
+      font-weight:750;
+    }
+
+    .metaValue{
+      margin-top:5px;
+      color:#3e5451;
+      font-size:10px;
+      line-height:1.35;
+      font-weight:700;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      white-space:nowrap;
+    }
+
+    .editor{
+      min-width:0;
+      display:grid;
+      grid-template-columns:1fr 1fr;
+      gap:7px;
+    }
+
+    .editor select{
+      width:100%;
+      height:35px;
+      border:1px solid #cbd8d6;
+      border-radius:9px;
+      background:#fff;
+      color:#334745;
+      outline:none;
+      padding:0 8px;
+      font-size:10px;
+      font-weight:750;
+    }
+
+    .editorActions{
+      grid-column:1/-1;
+      display:flex;
+      gap:6px;
+      flex-wrap:wrap;
+    }
+
+    .editorActions .btn{
+      flex:1 1 auto;
+    }
+
+    .empty{
+      margin-top:8px;
+      padding:48px 18px;
+      border:1px dashed #c9dad7;
+      border-radius:16px;
+      background:rgba(255,255,255,.82);
+      color:#859492;
+      text-align:center;
+      font-size:11px;
+      font-weight:650;
+      line-height:1.6;
+    }
+
+    .accessDenied{
+      position:fixed;
+      inset:0;
+      z-index:2000;
+      display:none;
+      align-items:center;
+      justify-content:center;
+      padding:20px;
+      background:rgba(244,249,248,.97);
+      backdrop-filter:blur(8px);
+    }
+
+    .accessDenied.show{
+      display:flex;
+    }
+
+    .accessCard{
+      width:min(520px,100%);
+      padding:24px;
+      border:1px solid var(--line);
+      border-radius:22px;
+      background:#fff;
+      box-shadow:0 26px 80px rgba(15,45,47,.15);
+    }
+
+    .accessCard h2{
+      margin:0 0 9px;
+      font-size:24px;
+      font-weight:900;
+      letter-spacing:-.04em;
+    }
+
+    .accessCard p{
+      margin:0;
+      color:#627472;
+      font-size:12px;
+      line-height:1.65;
+      font-weight:650;
+    }
+
+    .accessMeta{
+      margin-top:13px;
+      padding:10px 12px;
+      border:1px solid var(--line);
+      border-radius:12px;
+      background:#f8fbfa;
+      color:#506462;
+      font-size:11px;
+      font-weight:700;
+      word-break:break-all;
+    }
+
+    .accessActions{
+      display:flex;
+      justify-content:flex-end;
+      gap:8px;
+      margin-top:16px;
+    }
+
+    dialog{
+      width:min(92vw,500px);
+      padding:0;
+      border:1px solid var(--line);
+      border-radius:20px;
+      font-family:var(--font);
+      box-shadow:0 26px 80px rgba(15,45,47,.24);
+    }
+
+    dialog::backdrop{
+      background:rgba(15,33,36,.42);
+      backdrop-filter:blur(3px);
+    }
+
+    .dialogHead{
+      padding:17px 18px 13px;
+      border-bottom:1px solid var(--line2);
+      background:linear-gradient(180deg,#fff,#fbfefd);
+    }
+
+    .dialogTitle{
+      margin:0;
+      font-size:17px;
+      font-weight:900;
+      letter-spacing:-.03em;
+    }
+
+    .dialogBody{
+      padding:16px 18px;
+      color:#566967;
+      font-size:12px;
+      line-height:1.65;
+      font-weight:600;
+    }
+
+    .dialogWarning{
+      margin-top:10px;
+      padding:10px 11px;
+      border:1px solid #fde68a;
+      border-radius:11px;
+      background:var(--amberSoft);
+      color:#8a5c08;
+      font-size:10.5px;
+      font-weight:700;
+    }
+
+    .dialogActions{
+      display:flex;
+      justify-content:flex-end;
+      gap:8px;
+      padding:0 18px 16px;
+    }
+
+    @media(max-width:1180px){
+      .hero{
+        grid-template-columns:1fr;
+      }
+
+      .stats{
+        grid-template-columns:repeat(3,minmax(0,1fr));
+      }
+
+      .userCard{
+        grid-template-columns:1fr 1.3fr;
+      }
+
+      .editor{
+        grid-column:1/-1;
       }
     }
-  );
-}
 
-function publicSupabaseKey(env) {
-  return String(
-    env.SUPABASE_PUBLISHABLE_KEY ||
-    env.SUPABASE_ANON_KEY ||
-    ""
-  ).trim();
-}
+    @media(max-width:780px){
+      body{
+        padding:6px 7px 28px;
+      }
 
-function serviceSupabaseKey(env) {
-  return String(
-    env.SUPABASE_SERVICE_ROLE ||
-    env.SUPABASE_SECRET_KEY ||
-    ""
-  ).trim();
-}
+      .topbar{
+        top:5px;
+        flex-wrap:wrap;
+        border-radius:15px;
+      }
 
-function supabaseUrl(env) {
-  return String(
-    env.SUPABASE_URL || ""
-  )
-    .trim()
-    .replace(/\/+$/,"");
-}
+      .brandText{
+        flex:1;
+      }
 
-function normalizeEmail(value) {
-  return String(value || "")
-    .trim()
-    .toLowerCase();
-}
+      .spacer{
+        display:none;
+      }
 
-function cleanText(value, maxLength) {
-  return String(value || "")
-    .trim()
-    .slice(0,maxLength);
-}
+      .sessionPill{
+        order:3;
+        width:100%;
+        max-width:none;
+      }
 
-function bearerToken(request) {
-  const header =
-    request.headers.get("Authorization") || "";
+      .heroTitle{
+        font-size:23px;
+      }
 
-  const match =
-    header.match(/^Bearer\s+(.+)$/i);
+      .stats{
+        grid-template-columns:repeat(2,minmax(0,1fr));
+      }
 
-  return match
-    ? match[1].trim()
-    : "";
-}
+      .filterSelect{
+        flex:1 1 140px;
+        width:auto;
+      }
 
-function httpError(status,message) {
-  const error = new Error(message);
-  error.status = status;
-  return error;
-}
+      .userCard{
+        grid-template-columns:1fr;
+      }
 
-function mapSignupError(payload,status) {
-  const code = String(
-    payload?.code ||
-    payload?.error_code ||
-    ""
-  ).toLowerCase();
+      .metaGrid{
+        grid-template-columns:1fr 1fr;
+      }
 
-  const message = String(
-    payload?.msg ||
-    payload?.message ||
-    payload?.error_description ||
-    ""
-  );
-
-  if(
-    code.includes("user_already_exists") ||
-    /already registered|already exists/i.test(message)
-  ){
-    return "이미 가입된 이메일입니다.";
-  }
-
-  if(
-    /password/i.test(message) &&
-    /weak|short|least/i.test(message)
-  ){
-    return "비밀번호 조건을 확인해주세요.";
-  }
-
-  if(status === 429){
-    return "가입 요청이 너무 많습니다. 잠시 후 다시 시도해주세요.";
-  }
-
-  return message ||
-    "회원가입 처리 중 오류가 발생했습니다.";
-}
-
-async function publicAuthFetch(
-  env,
-  path,
-  options = {}
-) {
-  const base = supabaseUrl(env);
-  const key = publicSupabaseKey(env);
-
-  if(!base || !key){
-    throw new Error(
-      "Supabase 공개 설정이 누락되었습니다."
-    );
-  }
-
-  const headers =
-    new Headers(options.headers || {});
-
-  headers.set("apikey",key);
-
-  if(options.body && !headers.has("Content-Type")){
-    headers.set(
-      "Content-Type",
-      "application/json"
-    );
-  }
-
-  return fetch(
-    base + path,
-    {
-      ...options,
-      headers
+      .editor{
+        grid-column:auto;
+      }
     }
-  );
-}
 
-async function serviceAuthFetch(
-  env,
-  path,
-  options = {}
-) {
-  const base = supabaseUrl(env);
-  const key = serviceSupabaseKey(env);
+    @media(max-width:480px){
+      .stats{
+        grid-template-columns:1fr 1fr;
+      }
 
-  if(!base || !key){
-    throw new Error(
-      "Supabase Service Role 설정이 누락되었습니다."
-    );
-  }
+      .metaGrid{
+        grid-template-columns:1fr;
+      }
 
-  const headers =
-    new Headers(options.headers || {});
+      .editor{
+        grid-template-columns:1fr;
+      }
 
-  headers.set("apikey",key);
-  headers.set(
-    "Authorization",
-    "Bearer " + key
-  );
-
-  if(options.body && !headers.has("Content-Type")){
-    headers.set(
-      "Content-Type",
-      "application/json"
-    );
-  }
-
-  return fetch(
-    base + path,
-    {
-      ...options,
-      headers
+      .editorActions{
+        grid-column:auto;
+      }
     }
-  );
-}
+  </style>
+</head>
 
-async function restServiceFetch(
-  env,
-  path,
-  options = {}
-) {
-  const base = supabaseUrl(env);
-  const key = serviceSupabaseKey(env);
+<body>
+<div class="page">
 
-  if(!base || !key){
-    throw new Error(
-      "Supabase Service Role 설정이 누락되었습니다."
-    );
+  <header class="topbar">
+    <button
+      id="tnBoardMenuToggle"
+      class="brandButton"
+      type="button"
+      aria-label="TO:NEST 메뉴 열기"
+    >
+      <img src="/favicon.ico?v=8" alt="TO:NEST">
+    </button>
+
+    <div class="brandText">
+      <div class="brandTitle">계정 · 권한 관리</div>
+      <div class="brandSub">가입 승인 · 역할 설정 · 이메일 인증 관리</div>
+    </div>
+
+    <div class="spacer"></div>
+
+    <span id="sessionPill" class="sessionPill">최고관리자 확인 중</span>
+
+    <button id="copySignupBtn" class="btn green" type="button">
+      회원가입 링크 복사
+    </button>
+
+    <button id="reloadBtn" class="btn" type="button">
+      새로고침
+    </button>
+
+    <button id="logoutBtn" class="btn red" type="button">
+      로그아웃
+    </button>
+  </header>
+
+  <section class="hero">
+    <article class="heroCard heroMain">
+      <div class="kicker">TO:NEST ADMINISTRATION</div>
+      <h1 class="heroTitle">계정과 권한을 한 화면에서 관리합니다.</h1>
+      <p class="heroDesc">
+        TO:NEST는 별도 기능 권한을 두지 않고
+        최고관리자 · 관리자 · 팀장 · 기사 4단계만 사용합니다.
+        가입 승인, 계정 상태, 이메일 인증 여부를 여기서 함께 확인하고 변경합니다.
+      </p>
+    </article>
+
+    <article class="heroCard heroNotice">
+      <div class="noticeTitle">메일 강제 인증</div>
+      <div class="noticeBody">
+        사용자가 가입 메일을 확인하지 못한 경우 최고관리자가
+        해당 계정을 직접 이메일 인증 완료 상태로 변경할 수 있습니다.
+      </div>
+      <div class="noticeBadge">최고관리자 전용 · 되돌리기 버튼 없음</div>
+    </article>
+  </section>
+
+  <section class="stats">
+    <article class="stat">
+      <div class="statLabel">전체 계정</div>
+      <div id="statTotal" class="statValue">0</div>
+    </article>
+
+    <article class="stat pending">
+      <div class="statLabel">승인 대기</div>
+      <div id="statPending" class="statValue">0</div>
+    </article>
+
+    <article class="stat active">
+      <div class="statLabel">활성</div>
+      <div id="statActive" class="statValue">0</div>
+    </article>
+
+    <article class="stat unconfirmed">
+      <div class="statLabel">메일 미인증</div>
+      <div id="statUnconfirmed" class="statValue">0</div>
+    </article>
+
+    <article class="stat suspended">
+      <div class="statLabel">정지</div>
+      <div id="statSuspended" class="statValue">0</div>
+    </article>
+  </section>
+
+  <section class="filterCard">
+    <input
+      id="searchInput"
+      class="searchInput"
+      type="search"
+      placeholder="이름 · 이메일 검색"
+      autocomplete="off"
+    >
+
+    <select id="roleFilter" class="filterSelect">
+      <option value="">모든 권한</option>
+      <option value="super_admin">최고관리자</option>
+      <option value="admin">관리자</option>
+      <option value="team_leader">팀장</option>
+      <option value="driver">기사</option>
+    </select>
+
+    <select id="statusFilter" class="filterSelect">
+      <option value="">모든 상태</option>
+      <option value="pending">승인 대기</option>
+      <option value="active">활성</option>
+      <option value="suspended">정지</option>
+      <option value="rejected">거절</option>
+    </select>
+
+    <select id="emailFilter" class="filterSelect">
+      <option value="">모든 이메일 상태</option>
+      <option value="confirmed">메일 인증 완료</option>
+      <option value="unconfirmed">메일 미인증</option>
+    </select>
+
+    <button id="clearFilterBtn" class="btn" type="button">
+      필터 초기화
+    </button>
+  </section>
+
+  <div class="statusLine">
+    <div id="statusText" class="statusText">계정 목록을 불러오는 중입니다.</div>
+    <div id="resultCount" class="resultCount">0건</div>
+  </div>
+
+  <main id="userList" class="list">
+    <div class="empty">계정 목록을 불러오는 중입니다.</div>
+  </main>
+
+</div>
+
+<div id="accessDenied" class="accessDenied">
+  <div class="accessCard">
+    <h2>최고관리자 전용</h2>
+    <p>
+      이 페이지는 활성 상태의 최고관리자만 사용할 수 있습니다.
+      관리자 · 팀장 · 기사 계정은 접근할 수 없습니다.
+    </p>
+
+    <div id="accessMeta" class="accessMeta"></div>
+
+    <div class="accessActions">
+      <button id="deniedHomeBtn" class="btn" type="button">홈으로</button>
+      <button id="deniedLogoutBtn" class="btn red" type="button">로그아웃</button>
+    </div>
+  </div>
+</div>
+
+<dialog id="confirmDialog">
+  <div class="dialogHead">
+    <h3 id="dialogTitle" class="dialogTitle">확인</h3>
+  </div>
+
+  <div id="dialogBody" class="dialogBody"></div>
+
+  <div class="dialogActions">
+    <button id="dialogCancelBtn" class="btn" type="button">취소</button>
+    <button id="dialogConfirmBtn" class="btn primary" type="button">확인</button>
+  </div>
+</dialog>
+
+<script>
+(async function(){
+  "use strict";
+
+  const AUTH_BASE = location.origin;
+
+  const $ = id => document.getElementById(id);
+
+  const dom = {
+    sessionPill:$("sessionPill"),
+    copySignupBtn:$("copySignupBtn"),
+    reloadBtn:$("reloadBtn"),
+    logoutBtn:$("logoutBtn"),
+
+    statTotal:$("statTotal"),
+    statPending:$("statPending"),
+    statActive:$("statActive"),
+    statUnconfirmed:$("statUnconfirmed"),
+    statSuspended:$("statSuspended"),
+
+    searchInput:$("searchInput"),
+    roleFilter:$("roleFilter"),
+    statusFilter:$("statusFilter"),
+    emailFilter:$("emailFilter"),
+    clearFilterBtn:$("clearFilterBtn"),
+
+    statusText:$("statusText"),
+    resultCount:$("resultCount"),
+    userList:$("userList"),
+
+    accessDenied:$("accessDenied"),
+    accessMeta:$("accessMeta"),
+    deniedHomeBtn:$("deniedHomeBtn"),
+    deniedLogoutBtn:$("deniedLogoutBtn"),
+
+    confirmDialog:$("confirmDialog"),
+    dialogTitle:$("dialogTitle"),
+    dialogBody:$("dialogBody"),
+    dialogCancelBtn:$("dialogCancelBtn"),
+    dialogConfirmBtn:$("dialogConfirmBtn")
+  };
+
+  const state = {
+    supabase:null,
+    session:null,
+    me:null,
+    rows:[],
+    stats:{
+      total:0,
+      pending:0,
+      active:0,
+      suspended:0,
+      rejected:0,
+      unconfirmed:0
+    },
+    loading:false
+  };
+
+  const esc = value =>
+    String(value ?? "")
+      .replaceAll("&","&amp;")
+      .replaceAll("<","&lt;")
+      .replaceAll(">","&gt;")
+      .replaceAll('"',"&quot;")
+      .replaceAll("'","&#39;");
+
+  const roleLabel = role => ({
+    super_admin:"최고관리자",
+    admin:"관리자",
+    team_leader:"팀장",
+    driver:"기사"
+  })[role] || role || "-";
+
+  const statusLabel = status => ({
+    pending:"승인 대기",
+    active:"활성",
+    suspended:"정지",
+    rejected:"거절"
+  })[status] || status || "-";
+
+  const statusClass = status => ({
+    pending:"amber",
+    active:"green",
+    suspended:"purple",
+    rejected:"red"
+  })[status] || "";
+
+  function setStatus(message,type=""){
+    dom.statusText.textContent = message || "";
+    dom.statusText.className =
+      "statusText" +
+      (type ? " " + type : "");
   }
 
-  const headers =
-    new Headers(options.headers || {});
+  function setLoading(on,message){
+    state.loading = !!on;
 
-  headers.set("apikey",key);
-  headers.set(
-    "Authorization",
-    "Bearer " + key
-  );
+    [
+      dom.reloadBtn,
+      dom.clearFilterBtn
+    ].forEach(button => {
+      button.disabled = !!on;
+    });
 
-  if(options.body && !headers.has("Content-Type")){
-    headers.set(
-      "Content-Type",
-      "application/json"
-    );
-  }
+    dom.userList
+      .querySelectorAll("button,select")
+      .forEach(element => {
+        element.disabled = !!on;
+      });
 
-  return fetch(
-    base + "/rest/v1" + path,
-    {
-      ...options,
-      headers
+    if(on && message){
+      setStatus(message,"warn");
     }
-  );
-}
-
-async function getSessionUser(request,env) {
-  const token = bearerToken(request);
-
-  if(!token){
-    return null;
   }
 
-  const response =
-    await publicAuthFetch(
-      env,
-      "/auth/v1/user",
-      {
-        headers:{
-          "Authorization":"Bearer " + token
+  function fmtDate(value){
+    if(!value) return "-";
+
+    try{
+      const date = new Date(value);
+
+      if(Number.isNaN(date.getTime())){
+        return String(value);
+      }
+
+      return new Intl.DateTimeFormat(
+        "ko-KR",
+        {
+          year:"numeric",
+          month:"2-digit",
+          day:"2-digit",
+          hour:"2-digit",
+          minute:"2-digit"
         }
-      }
-    );
-
-  if(!response.ok){
-    return null;
+      ).format(date);
+    }catch{
+      return String(value);
+    }
   }
 
-  return response.json();
-}
+  function initials(row){
+    const name =
+      String(
+        row.display_name ||
+        row.email ||
+        "T"
+      ).trim();
 
-async function getProfileByUserId(env,userId) {
-  const response =
-    await restServiceFetch(
-      env,
-      "/profiles" +
-      "?select=user_id,email,display_name,role,status,approved_at,approved_by,created_at,updated_at" +
-      "&user_id=eq." +
-      encodeURIComponent(userId) +
-      "&limit=1"
-    );
-
-  if(!response.ok){
-    throw new Error(
-      "프로필 조회 실패: " +
-      await response.text()
-    );
+    return (
+      name.slice(0,2) || "TN"
+    ).toUpperCase();
   }
 
-  const rows =
-    await response.json();
-
-  return rows?.[0] || null;
-}
-
-async function getAllProfiles(env) {
-  const response =
-    await restServiceFetch(
-      env,
-      "/profiles" +
-      "?select=user_id,email,display_name,role,status,approved_at,approved_by,created_at,updated_at" +
-      "&order=created_at.desc"
-    );
-
-  if(!response.ok){
-    throw new Error(
-      "프로필 목록 조회 실패: " +
-      await response.text()
-    );
-  }
-
-  return response.json();
-}
-
-async function requireSuperAdmin(request,env) {
-  const user =
-    await getSessionUser(
-      request,
-      env
-    );
-
-  if(!user?.id){
-    throw httpError(
-      401,
-      "로그인이 필요합니다."
-    );
-  }
-
-  const profile =
-    await getProfileByUserId(
-      env,
-      user.id
-    );
-
-  if(
-    !profile ||
-    profile.status !== "active" ||
-    profile.role !== "super_admin"
-  ){
-    throw httpError(
-      403,
-      "최고관리자 권한이 필요합니다."
-    );
-  }
-
-  return {
-    user,
-    profile
-  };
-}
-
-async function adminGetUser(env,userId) {
-  const response =
-    await serviceAuthFetch(
-      env,
-      "/auth/v1/admin/users/" +
-      encodeURIComponent(userId)
-    );
-
-  const payload =
-    await response
-      .json()
-      .catch(() => ({}));
-
-  if(!response.ok){
-    throw httpError(
-      response.status,
-      payload?.msg ||
-      payload?.message ||
-      "Auth 사용자 조회에 실패했습니다."
-    );
-  }
-
-  return payload?.user || payload;
-}
-
-async function adminListUsers(env) {
-  const all = [];
-  const perPage = 1000;
-
-  for(let page = 1; page <= 10; page += 1){
+  async function initSupabase(){
     const response =
-      await serviceAuthFetch(
-        env,
-        "/auth/v1/admin/users" +
-        "?page=" + page +
-        "&per_page=" + perPage
+      await fetch(
+        AUTH_BASE + "/auth-config",
+        {cache:"no-store"}
       );
 
-    const payload =
+    const config =
       await response
         .json()
         .catch(() => ({}));
 
-    if(!response.ok){
-      throw httpError(
-        response.status,
-        payload?.msg ||
-        payload?.message ||
-        "Auth 사용자 목록 조회에 실패했습니다."
+    if(
+      !response.ok ||
+      !config.supabaseUrl ||
+      !config.supabaseKey
+    ){
+      throw new Error(
+        config.message ||
+        "로그인 설정을 불러오지 못했습니다."
       );
     }
 
-    const users =
-      Array.isArray(payload)
-        ? payload
-        : (
-          Array.isArray(payload?.users)
-            ? payload.users
-            : []
-        );
-
-    all.push(...users);
-
-    if(users.length < perPage){
-      break;
-    }
-  }
-
-  return all;
-}
-
-async function ensureProfile(env,authUser) {
-  const existing =
-    await getProfileByUserId(
-      env,
-      authUser.id
-    );
-
-  if(existing){
-    return existing;
-  }
-
-  const metadata =
-    authUser.user_metadata || {};
-
-  const displayName =
-    cleanText(
-      metadata.display_name ||
-      metadata.full_name ||
-      metadata.name ||
-      "",
-      50
-    ) || null;
-
-  const response =
-    await restServiceFetch(
-      env,
-      "/profiles" +
-      "?on_conflict=user_id",
-      {
-        method:"POST",
-        headers:{
-          "Prefer":
-            "resolution=merge-duplicates,return=representation"
-        },
-        body:JSON.stringify({
-          user_id:authUser.id,
-          email:normalizeEmail(authUser.email),
-          display_name:displayName,
-          role:"driver",
-          status:"pending"
-        })
-      }
-    );
-
-  if(!response.ok){
-    throw new Error(
-      "누락 프로필 생성 실패: " +
-      await response.text()
-    );
-  }
-
-  const rows =
-    await response.json();
-
-  return rows?.[0] || null;
-}
-
-function mergedAdminUser(authUser,profile) {
-  const metadata =
-    authUser?.user_metadata || {};
-
-  const emailConfirmedAt =
-    authUser?.email_confirmed_at ||
-    authUser?.confirmed_at ||
-    null;
-
-  return {
-    user_id:authUser?.id || profile?.user_id || "",
-    email:
-      normalizeEmail(
-        authUser?.email ||
-        profile?.email ||
-        ""
-      ),
-    display_name:
-      profile?.display_name ||
-      metadata.display_name ||
-      metadata.full_name ||
-      metadata.name ||
-      "",
-    role:
-      profile?.role ||
-      "driver",
-    status:
-      profile?.status ||
-      "pending",
-    approved_at:
-      profile?.approved_at ||
-      null,
-    approved_by:
-      profile?.approved_by ||
-      null,
-    profile_created_at:
-      profile?.created_at ||
-      null,
-    profile_updated_at:
-      profile?.updated_at ||
-      null,
-    auth_created_at:
-      authUser?.created_at ||
-      null,
-    last_sign_in_at:
-      authUser?.last_sign_in_at ||
-      null,
-    email_confirmed_at:
-      emailConfirmedAt,
-    email_confirmed:
-      !!emailConfirmedAt,
-    banned_until:
-      authUser?.banned_until ||
-      null,
-    profile_missing:
-      !profile
-  };
-}
-
-async function handleAdminMe(request,env) {
-  const context =
-    await requireSuperAdmin(
-      request,
-      env
-    );
-
-  return json(
-    request,
-    {
-      ok:true,
-      user:{
-        id:context.user.id,
-        email:context.user.email || ""
-      },
-      profile:context.profile
-    }
-  );
-}
-
-async function handleAdminUsers(request,env) {
-  await requireSuperAdmin(
-    request,
-    env
-  );
-
-  const url =
-    new URL(request.url);
-
-  const query =
-    cleanText(
-      url.searchParams.get("q"),
-      120
-    ).toLowerCase();
-
-  const roleFilter =
-    cleanText(
-      url.searchParams.get("role"),
-      30
-    );
-
-  const statusFilter =
-    cleanText(
-      url.searchParams.get("status"),
-      30
-    );
-
-  const emailState =
-    cleanText(
-      url.searchParams.get("email_state"),
-      30
-    );
-
-  const [
-    authUsers,
-    profiles
-  ] = await Promise.all([
-    adminListUsers(env),
-    getAllProfiles(env)
-  ]);
-
-  const profileMap =
-    new Map(
-      profiles.map(
-        profile => [
-          String(profile.user_id),
-          profile
-        ]
-      )
-    );
-
-  let rows =
-    authUsers.map(authUser =>
-      mergedAdminUser(
-        authUser,
-        profileMap.get(
-          String(authUser.id)
-        ) || null
-      )
-    );
-
-  if(query){
-    rows =
-      rows.filter(row =>
-        [
-          row.display_name,
-          row.email,
-          row.user_id
-        ]
-          .some(value =>
-            String(value || "")
-              .toLowerCase()
-              .includes(query)
-          )
-      );
-  }
-
-  if(
-    roleFilter &&
-    VALID_ROLES.has(roleFilter)
-  ){
-    rows =
-      rows.filter(
-        row => row.role === roleFilter
-      );
-  }
-
-  if(
-    statusFilter &&
-    VALID_STATUSES.has(statusFilter)
-  ){
-    rows =
-      rows.filter(
-        row => row.status === statusFilter
-      );
-  }
-
-  if(emailState === "confirmed"){
-    rows =
-      rows.filter(
-        row => row.email_confirmed
-      );
-  }
-
-  if(emailState === "unconfirmed"){
-    rows =
-      rows.filter(
-        row => !row.email_confirmed
-      );
-  }
-
-  rows.sort((a,b) => {
-    const statusRank = {
-      pending:0,
-      active:1,
-      suspended:2,
-      rejected:3
-    };
-
-    const ar =
-      statusRank[a.status] ?? 9;
-
-    const br =
-      statusRank[b.status] ?? 9;
-
-    if(ar !== br){
-      return ar - br;
-    }
-
-    return String(a.display_name || a.email)
-      .localeCompare(
-        String(b.display_name || b.email),
-        "ko",
+    state.supabase =
+      window.supabase.createClient(
+        config.supabaseUrl,
+        config.supabaseKey,
         {
-          numeric:true,
-          sensitivity:"base"
+          auth:{
+            persistSession:true,
+            storage:sessionStorage,
+            autoRefreshToken:true,
+            detectSessionInUrl:true
+          }
         }
       );
-  });
 
-  const allMerged =
-    authUsers.map(authUser =>
-      mergedAdminUser(
-        authUser,
-        profileMap.get(
-          String(authUser.id)
-        ) || null
-      )
-    );
+    const {
+      data:{session}
+    } =
+      await state.supabase.auth.getSession();
 
-  const stats = {
-    total:allMerged.length,
-    pending:
-      allMerged.filter(
-        row => row.status === "pending"
-      ).length,
-    active:
-      allMerged.filter(
-        row => row.status === "active"
-      ).length,
-    suspended:
-      allMerged.filter(
-        row => row.status === "suspended"
-      ).length,
-    rejected:
-      allMerged.filter(
-        row => row.status === "rejected"
-      ).length,
-    unconfirmed:
-      allMerged.filter(
-        row => !row.email_confirmed
-      ).length
-  };
-
-  return json(
-    request,
-    {
-      ok:true,
-      rows,
-      stats
+    if(!session?.access_token){
+      location.replace(
+        "/?next=%2Fadmin_access"
+      );
+      return false;
     }
-  );
-}
 
-async function activeSuperAdminCount(env) {
-  const response =
-    await restServiceFetch(
-      env,
-      "/profiles" +
-      "?select=user_id" +
-      "&role=eq.super_admin" +
-      "&status=eq.active"
-    );
-
-  if(!response.ok){
-    throw new Error(
-      "최고관리자 수 확인 실패: " +
-      await response.text()
-    );
+    state.session = session;
+    return true;
   }
 
-  return (
-    await response.json()
-  ).length;
-}
-
-async function updateProfileRoleStatus(
-  env,
-  actor,
-  targetAuthUser,
-  role,
-  status
-) {
-  let profile =
-    await ensureProfile(
-      env,
-      targetAuthUser
-    );
-
-  const currentRole =
-    profile?.role || "driver";
-
-  const currentStatus =
-    profile?.status || "pending";
-
-  if(
-    targetAuthUser.id === actor.user.id &&
-    (
-      role !== "super_admin" ||
-      status !== "active"
-    )
+  async function adminFetch(
+    path,
+    options = {}
   ){
-    throw httpError(
-      409,
-      "현재 로그인 중인 최고관리자 본인은 강등하거나 정지할 수 없습니다."
-    );
-  }
-
-  if(
-    currentRole === "super_admin" &&
-    currentStatus === "active" &&
-    (
-      role !== "super_admin" ||
-      status !== "active"
-    )
-  ){
-    const count =
-      await activeSuperAdminCount(env);
-
-    if(count <= 1){
-      throw httpError(
-        409,
-        "마지막 최고관리자 계정은 강등하거나 비활성화할 수 없습니다."
+    if(!state.session?.access_token){
+      throw new Error(
+        "로그인이 필요합니다."
       );
     }
-  }
 
-  const patch = {
-    role,
-    status,
-    email:normalizeEmail(targetAuthUser.email)
-  };
-
-  if(status === "active"){
-    patch.approved_at =
-      new Date().toISOString();
-
-    patch.approved_by =
-      actor.user.id;
-  }else if(
-    status === "pending" ||
-    status === "rejected"
-  ){
-    patch.approved_at = null;
-    patch.approved_by = null;
-  }
-
-  const response =
-    await restServiceFetch(
-      env,
-      "/profiles" +
-      "?user_id=eq." +
-      encodeURIComponent(targetAuthUser.id),
-      {
-        method:"PATCH",
-        headers:{
-          "Prefer":"return=representation"
-        },
-        body:JSON.stringify(patch)
-      }
-    );
-
-  if(!response.ok){
-    throw new Error(
-      "프로필 권한 변경 실패: " +
-      await response.text()
-    );
-  }
-
-  const rows =
-    await response.json();
-
-  return rows?.[0] || null;
-}
-
-async function forceConfirmEmail(
-  env,
-  userId
-) {
-  const response =
-    await serviceAuthFetch(
-      env,
-      "/auth/v1/admin/users/" +
-      encodeURIComponent(userId),
-      {
-        method:"PUT",
-        body:JSON.stringify({
-          email_confirm:true
-        })
-      }
-    );
-
-  const payload =
-    await response
-      .json()
-      .catch(() => ({}));
-
-  if(!response.ok){
-    throw httpError(
-      response.status,
-      payload?.msg ||
-      payload?.message ||
-      "이메일 강제 인증에 실패했습니다."
-    );
-  }
-
-  return payload?.user || payload;
-}
-
-async function handleAdminApply(
-  request,
-  env
-) {
-  const actor =
-    await requireSuperAdmin(
-      request,
-      env
-    );
-
-  let body;
-
-  try{
-    body =
-      await request.json();
-  }catch{
-    throw httpError(
-      400,
-      "잘못된 요청 형식입니다."
-    );
-  }
-
-  const userId =
-    cleanText(
-      body?.user_id,
-      80
-    );
-
-  const role =
-    cleanText(
-      body?.role,
-      30
-    );
-
-  const status =
-    cleanText(
-      body?.status,
-      30
-    );
-
-  const confirmEmail =
-    body?.confirm_email === true;
-
-  if(!userId){
-    throw httpError(
-      400,
-      "대상 user_id가 없습니다."
-    );
-  }
-
-  if(!VALID_ROLES.has(role)){
-    throw httpError(
-      400,
-      "허용되지 않은 권한입니다."
-    );
-  }
-
-  if(!VALID_STATUSES.has(status)){
-    throw httpError(
-      400,
-      "허용되지 않은 계정 상태입니다."
-    );
-  }
-
-  let authUser =
-    await adminGetUser(
-      env,
-      userId
-    );
-
-  /*
-   * 사용자가 요청한 "강제 메일 확인".
-   * Service Role이 있는 Worker에서만 실행.
-   */
-  if(
-    confirmEmail &&
-    !(
-      authUser.email_confirmed_at ||
-      authUser.confirmed_at
-    )
-  ){
-    authUser =
-      await forceConfirmEmail(
-        env,
-        userId
+    const headers =
+      new Headers(
+        options.headers || {}
       );
-  }
 
-  const profile =
-    await updateProfileRoleStatus(
-      env,
-      actor,
-      authUser,
-      role,
-      status
+    headers.set(
+      "Authorization",
+      "Bearer " +
+      state.session.access_token
     );
 
-  return json(
-    request,
-    {
-      ok:true,
-      user:
-        mergedAdminUser(
-          authUser,
-          profile
-        )
+    if(
+      options.body &&
+      !headers.has("Content-Type")
+    ){
+      headers.set(
+        "Content-Type",
+        "application/json"
+      );
     }
-  );
-}
 
-async function handleAdminConfirmEmail(
-  request,
-  env
-) {
-  await requireSuperAdmin(
-    request,
-    env
-  );
+    const response =
+      await fetch(
+        AUTH_BASE + path,
+        {
+          ...options,
+          headers,
+          cache:"no-store"
+        }
+      );
 
-  let body;
+    const data =
+      await response
+        .json()
+        .catch(() => ({}));
 
-  try{
-    body =
-      await request.json();
-  }catch{
-    throw httpError(
-      400,
-      "잘못된 요청 형식입니다."
-    );
-  }
+    if(
+      !response.ok ||
+      data?.ok === false
+    ){
+      const error =
+        new Error(
+          data?.message ||
+          `HTTP ${response.status}`
+        );
 
-  const userId =
-    cleanText(
-      body?.user_id,
-      80
-    );
+      error.status =
+        response.status;
 
-  if(!userId){
-    throw httpError(
-      400,
-      "대상 user_id가 없습니다."
-    );
-  }
-
-  const current =
-    await adminGetUser(
-      env,
-      userId
-    );
-
-  if(
-    current.email_confirmed_at ||
-    current.confirmed_at
-  ){
-    return json(
-      request,
-      {
-        ok:true,
-        already_confirmed:true,
-        user:
-          mergedAdminUser(
-            current,
-            await ensureProfile(
-              env,
-              current
-            )
-          )
-      }
-    );
-  }
-
-  const updated =
-    await forceConfirmEmail(
-      env,
-      userId
-    );
-
-  return json(
-    request,
-    {
-      ok:true,
-      already_confirmed:false,
-      user:
-        mergedAdminUser(
-          updated,
-          await ensureProfile(
-            env,
-            updated
-          )
-        )
+      throw error;
     }
-  );
-}
 
-async function handleAuthConfig(request,env) {
-  const url =
-    supabaseUrl(env);
-
-  const key =
-    publicSupabaseKey(env);
-
-  if(!url || !key){
-    return json(
-      request,
-      {
-        ok:false,
-        message:
-          "Supabase 공개 설정이 누락되었습니다."
-      },
-      500
-    );
+    return data;
   }
 
-  return json(
-    request,
-    {
-      ok:true,
-      supabaseUrl:url,
-      supabaseKey:key
-    }
-  );
-}
-
-async function handleSignup(request,env) {
-  if(!isAllowedOrigin(request)){
-    return json(
-      request,
-      {
-        ok:false,
-        message:
-          "허용되지 않은 요청입니다."
-      },
-      403
-    );
-  }
-
-  const base =
-    supabaseUrl(env);
-
-  const key =
-    publicSupabaseKey(env);
-
-  if(!base || !key){
-    return json(
-      request,
-      {
-        ok:false,
-        message:
-          "Supabase 설정이 누락되었습니다."
-      },
-      500
-    );
-  }
-
-  let body;
-
-  try{
-    body =
-      await request.json();
-  }catch{
-    return json(
-      request,
-      {
-        ok:false,
-        message:
-          "잘못된 요청 형식입니다."
-      },
-      400
-    );
-  }
-
-  const displayName =
-    cleanText(
-      body?.display_name,
-      50
-    );
-
-  const email =
-    normalizeEmail(
-      body?.email
-    );
-
-  const password =
-    String(
-      body?.password || ""
-    );
-
-  if(!displayName){
-    return json(
-      request,
-      {
-        ok:false,
-        message:
-          "이름을 입력해주세요."
-      },
-      400
-    );
-  }
-
-  if(
-    !email ||
-    !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
-  ){
-    return json(
-      request,
-      {
-        ok:false,
-        message:
-          "올바른 이메일 주소를 입력해주세요."
-      },
-      400
-    );
-  }
-
-  if(password.length < 8){
-    return json(
-      request,
-      {
-        ok:false,
-        message:
-          "비밀번호는 8자 이상 입력해주세요."
-      },
-      400
-    );
-  }
-
-  const redirectTo =
-    "https://tonest-corp.com/signup?verified=1";
-
-  const signupUrl =
-    base +
-    "/auth/v1/signup?redirect_to=" +
-    encodeURIComponent(
-      redirectTo
-    );
-
-  const signupResponse =
-    await fetch(
-      signupUrl,
-      {
-        method:"POST",
-        headers:{
-          "Content-Type":"application/json",
-          "apikey":key,
-          "Authorization":"Bearer " + key
-        },
-        body:JSON.stringify({
-          email,
-          password,
-          data:{
-            display_name:displayName,
-            full_name:displayName,
-            name:displayName
-          }
-        })
-      }
-    );
-
-  const payload =
-    await signupResponse
-      .json()
-      .catch(() => ({}));
-
-  if(!signupResponse.ok){
-    return json(
-      request,
-      {
-        ok:false,
-        message:
-          mapSignupError(
-            payload,
-            signupResponse.status
-          )
-      },
-      signupResponse.status
-    );
-  }
-
-  const requiresEmailConfirmation =
-    !payload?.access_token &&
-    !payload?.refresh_token;
-
-  return json(
-    request,
-    {
-      ok:true,
-      requiresEmailConfirmation,
-      message:
-        requiresEmailConfirmation
-          ? "가입 요청이 완료되었습니다. 이메일 인증 후 관리자 승인을 기다려주세요."
-          : "가입 요청이 완료되었습니다. 관리자 승인을 기다려주세요."
-    }
-  );
-}
-
-async function asHtml(response) {
-  const body =
-    await response.text();
-
-  const headers =
-    new Headers(
-      response.headers
-    );
-
-  headers.set(
-    "Content-Type",
-    "text/html; charset=utf-8"
-  );
-
-  headers.set(
-    "Cache-Control",
-    "no-store, no-cache, must-revalidate"
-  );
-
-  headers.set(
-    "Pragma",
-    "no-cache"
-  );
-
-  headers.delete(
-    "Content-Length"
-  );
-
-  return new Response(
-    body,
-    {
-      status:response.status,
-      headers
-    }
-  );
-}
-
-export default {
-  async fetch(request,env) {
+  async function checkMe(){
     try{
-      const url =
-        new URL(request.url);
-
-      const path =
-        url.pathname
-          .replace(/\/+$/,"")
-        || "/";
-
-      if(
-        request.method === "OPTIONS"
-      ){
-        if(!isAllowedOrigin(request)){
-          return new Response(
-            null,
-            {status:403}
-          );
-        }
-
-        return new Response(
-          null,
-          {
-            status:204,
-            headers:
-              corsHeaders(request)
-          }
-        );
-      }
-
-      if(
-        path === "/health" &&
-        request.method === "GET"
-      ){
-        return json(
-          request,
-          {
-            ok:true,
-            service:"tonest-login",
-            frontend:"cloudflare-assets",
-            adminApi:true,
-            forceEmailConfirm:true,
-            assetsBinding:
-              !!env.ASSETS &&
-              typeof env.ASSETS.fetch === "function",
-            time:
-              new Date().toISOString()
-          }
-        );
-      }
-
-      if(
-        path === "/auth-config" &&
-        request.method === "GET"
-      ){
-        return handleAuthConfig(
-          request,
-          env
-        );
-      }
-
-      if(
-        path === "/signup" &&
-        request.method === "POST"
-      ){
-        return handleSignup(
-          request,
-          env
-        );
-      }
-
-      if(
-        path === "/admin/me" &&
-        request.method === "GET"
-      ){
-        return handleAdminMe(
-          request,
-          env
-        );
-      }
-
-      if(
-        path === "/admin/users" &&
-        request.method === "GET"
-      ){
-        return handleAdminUsers(
-          request,
-          env
-        );
-      }
-
-      if(
-        path === "/admin/user/apply" &&
-        request.method === "POST"
-      ){
-        return handleAdminApply(
-          request,
-          env
-        );
-      }
-
-      if(
-        path === "/admin/user/confirm-email" &&
-        request.method === "POST"
-      ){
-        return handleAdminConfirmEmail(
-          request,
-          env
-        );
-      }
-
-      if(
-        !env.ASSETS ||
-        typeof env.ASSETS.fetch !== "function"
-      ){
-        return new Response(
-          "ASSETS binding missing",
-          {
-            status:500,
-            headers:{
-              "Content-Type":
-                "text/plain; charset=utf-8",
-              "Cache-Control":"no-store"
-            }
-          }
-        );
-      }
-
-      /*
-       * public/ 전체를 Cloudflare Assets로 서비스.
-       * 확장자 없는 public 파일은 그대로 URL로 사용.
-       *
-       * public/index.html   -> /
-       * public/signup       -> /signup
-       * public/home         -> /home
-       * public/tonest_info  -> /tonest_info
-       * public/admin_access -> /admin_access
-       */
-
-      if(path === "/"){
-        url.pathname =
-          "/index.html";
-      }
-
-      const assetRequest =
-        new Request(
-          url.toString(),
-          request
+      const data =
+        await adminFetch(
+          "/admin/me"
         );
 
-      const response =
-        await env.ASSETS.fetch(
-          assetRequest
-        );
+      state.me = data;
 
-      if(!response.ok){
-        return response;
-      }
+      const label =
+        data?.profile?.display_name ||
+        data?.user?.email ||
+        "최고관리자";
 
-      const fileName =
-        path === "/"
-          ? "index.html"
-          : (
-            path
-              .split("/")
-              .filter(Boolean)
-              .pop() ||
-            ""
-          );
+      dom.sessionPill.textContent =
+        `${label} · 최고관리자`;
 
-      const isHtml =
-        path === "/" ||
-        !fileName.includes(".") ||
-        fileName
-          .toLowerCase()
-          .endsWith(".html");
-
-      if(isHtml){
-        return asHtml(
-          response
-        );
-      }
-
-      return response;
+      return true;
 
     }catch(error){
-      console.error(
-        "TONEST LOGIN WORKER ERROR",
-        error
-      );
+      if(
+        error?.status === 401
+      ){
+        location.replace(
+          "/?next=%2Fadmin_access"
+        );
+        return false;
+      }
 
-      return json(
-        request,
-        {
-          ok:false,
-          message:
-            error?.message ||
-            "서버 처리 중 오류가 발생했습니다."
-        },
-        Number(
-          error?.status ||
-          500
-        )
-      );
+      if(
+        error?.status === 403
+      ){
+        dom.accessMeta.textContent =
+          state.session?.user?.email
+            ? `현재 로그인: ${state.session.user.email}`
+            : "로그인 계정을 확인할 수 없습니다.";
+
+        dom.accessDenied.classList.add(
+          "show"
+        );
+
+        return false;
+      }
+
+      throw error;
     }
   }
-};
+
+  function filterQuery(){
+    const params =
+      new URLSearchParams();
+
+    const q =
+      dom.searchInput.value.trim();
+
+    if(q){
+      params.set("q",q);
+    }
+
+    if(dom.roleFilter.value){
+      params.set(
+        "role",
+        dom.roleFilter.value
+      );
+    }
+
+    if(dom.statusFilter.value){
+      params.set(
+        "status",
+        dom.statusFilter.value
+      );
+    }
+
+    if(dom.emailFilter.value){
+      params.set(
+        "email_state",
+        dom.emailFilter.value
+      );
+    }
+
+    const query =
+      params.toString();
+
+    return query
+      ? "?" + query
+      : "";
+  }
+
+  function renderStats(){
+    dom.statTotal.textContent =
+      state.stats.total || 0;
+
+    dom.statPending.textContent =
+      state.stats.pending || 0;
+
+    dom.statActive.textContent =
+      state.stats.active || 0;
+
+    dom.statUnconfirmed.textContent =
+      state.stats.unconfirmed || 0;
+
+    dom.statSuspended.textContent =
+      state.stats.suspended || 0;
+  }
+
+  function renderUser(row){
+    const own =
+      String(row.user_id) ===
+      String(state.me?.user?.id || "");
+
+    const roleOptions = [
+      ["super_admin","최고관리자"],
+      ["admin","관리자"],
+      ["team_leader","팀장"],
+      ["driver","기사"]
+    ]
+      .map(([value,label]) => `
+        <option
+          value="${value}"
+          ${row.role === value ? "selected" : ""}
+        >
+          ${label}
+        </option>
+      `)
+      .join("");
+
+    const statusOptions = [
+      ["pending","승인 대기"],
+      ["active","활성"],
+      ["suspended","정지"],
+      ["rejected","거절"]
+    ]
+      .map(([value,label]) => `
+        <option
+          value="${value}"
+          ${row.status === value ? "selected" : ""}
+        >
+          ${label}
+        </option>
+      `)
+      .join("");
+
+    return `
+      <article
+        class="userCard ${esc(row.status)}"
+        data-user-id="${esc(row.user_id)}"
+      >
+
+        <div class="userIdentity">
+          <div class="avatar">
+            ${esc(initials(row))}
+          </div>
+
+          <div style="min-width:0">
+            <div class="userName">
+              ${esc(row.display_name || "이름 없음")}
+            </div>
+
+            <div class="userEmail">
+              ${esc(row.email || "-")}
+            </div>
+
+            <div class="badges">
+              <span class="badge primary">
+                ${esc(roleLabel(row.role))}
+              </span>
+
+              <span class="badge ${statusClass(row.status)}">
+                ${esc(statusLabel(row.status))}
+              </span>
+
+              ${
+                row.email_confirmed
+                  ? `
+                    <span class="badge green">
+                      메일 인증 완료
+                    </span>
+                  `
+                  : `
+                    <span class="badge red">
+                      메일 미인증
+                    </span>
+                  `
+              }
+
+              ${
+                own
+                  ? `
+                    <span class="badge purple">
+                      현재 계정
+                    </span>
+                  `
+                  : ""
+              }
+
+              ${
+                row.profile_missing
+                  ? `
+                    <span class="badge amber">
+                      profile 누락
+                    </span>
+                  `
+                  : ""
+              }
+            </div>
+          </div>
+        </div>
+
+        <div class="metaGrid">
+          <div class="metaBox">
+            <div class="metaLabel">가입일</div>
+            <div class="metaValue">
+              ${esc(fmtDate(row.auth_created_at))}
+            </div>
+          </div>
+
+          <div class="metaBox">
+            <div class="metaLabel">최근 로그인</div>
+            <div class="metaValue">
+              ${esc(fmtDate(row.last_sign_in_at))}
+            </div>
+          </div>
+
+          <div class="metaBox">
+            <div class="metaLabel">메일 인증일</div>
+            <div class="metaValue">
+              ${esc(fmtDate(row.email_confirmed_at))}
+            </div>
+          </div>
+
+          <div class="metaBox">
+            <div class="metaLabel">승인일</div>
+            <div class="metaValue">
+              ${esc(fmtDate(row.approved_at))}
+            </div>
+          </div>
+
+          <div class="metaBox">
+            <div class="metaLabel">USER ID</div>
+            <div class="metaValue" title="${esc(row.user_id)}">
+              ${esc(row.user_id || "-")}
+            </div>
+          </div>
+
+          <div class="metaBox">
+            <div class="metaLabel">PROFILE 상태</div>
+            <div class="metaValue">
+              ${row.profile_missing ? "자동 복구 가능" : "정상"}
+            </div>
+          </div>
+        </div>
+
+        <div class="editor">
+          <select
+            data-role-select
+            aria-label="권한"
+            ${own ? "disabled" : ""}
+          >
+            ${roleOptions}
+          </select>
+
+          <select
+            data-status-select
+            aria-label="상태"
+            ${own ? "disabled" : ""}
+          >
+            ${statusOptions}
+          </select>
+
+          <div class="editorActions">
+            ${
+              !row.email_confirmed
+                ? `
+                  <button
+                    class="btn amber small"
+                    type="button"
+                    data-action="confirm-email"
+                  >
+                    메일 강제 인증
+                  </button>
+                `
+                : ""
+            }
+
+            ${
+              !own
+                ? `
+                  <button
+                    class="btn primary small"
+                    type="button"
+                    data-action="save"
+                  >
+                    권한 · 상태 저장
+                  </button>
+                `
+                : ""
+            }
+
+            ${
+              !own &&
+              row.status === "pending"
+                ? `
+                  <button
+                    class="btn green small"
+                    type="button"
+                    data-action="approve"
+                  >
+                    ${
+                      row.email_confirmed
+                        ? "바로 승인"
+                        : "승인 + 메일인증"
+                    }
+                  </button>
+                `
+                : ""
+            }
+          </div>
+        </div>
+
+      </article>
+    `;
+  }
+
+  function renderUsers(){
+    dom.resultCount.textContent =
+      `${state.rows.length}건`;
+
+    if(!state.rows.length){
+      dom.userList.innerHTML = `
+        <div class="empty">
+          조건에 맞는 계정이 없습니다.
+        </div>
+      `;
+      return;
+    }
+
+    dom.userList.innerHTML =
+      state.rows
+        .map(renderUser)
+        .join("");
+  }
+
+  async function loadUsers(){
+    try{
+      setLoading(
+        true,
+        "계정 목록을 불러오는 중..."
+      );
+
+      const data =
+        await adminFetch(
+          "/admin/users" +
+          filterQuery()
+        );
+
+      state.rows =
+        Array.isArray(data.rows)
+          ? data.rows
+          : [];
+
+      state.stats =
+        data.stats || state.stats;
+
+      renderStats();
+      renderUsers();
+
+      setStatus(
+        `계정 ${state.rows.length}건 조회 완료`,
+        "ok"
+      );
+
+    }catch(error){
+      console.error(error);
+
+      if(error?.status === 403){
+        dom.accessMeta.textContent =
+          state.session?.user?.email
+            ? `현재 로그인: ${state.session.user.email}`
+            : "현재 계정을 확인할 수 없습니다.";
+
+        dom.accessDenied.classList.add(
+          "show"
+        );
+
+        return;
+      }
+
+      dom.userList.innerHTML = `
+        <div class="empty">
+          계정 목록 조회에 실패했습니다.<br>
+          ${esc(error?.message || String(error))}
+        </div>
+      `;
+
+      setStatus(
+        error?.message || String(error),
+        "err"
+      );
+
+    }finally{
+      setLoading(false);
+    }
+  }
+
+  function askConfirm(
+    title,
+    html,
+    confirmLabel = "확인"
+  ){
+    return new Promise(resolve => {
+      dom.dialogTitle.textContent = title;
+      dom.dialogBody.innerHTML = html;
+      dom.dialogConfirmBtn.textContent =
+        confirmLabel;
+
+      const finish = result => {
+        dom.dialogConfirmBtn.onclick = null;
+        dom.dialogCancelBtn.onclick = null;
+        dom.confirmDialog.oncancel = null;
+
+        dom.confirmDialog.close();
+        resolve(result);
+      };
+
+      dom.dialogConfirmBtn.onclick =
+        () => finish(true);
+
+      dom.dialogCancelBtn.onclick =
+        () => finish(false);
+
+      dom.confirmDialog.oncancel =
+        event => {
+          event.preventDefault();
+          finish(false);
+        };
+
+      dom.confirmDialog.showModal();
+    });
+  }
+
+  function cardFor(target){
+    return target.closest(
+      "[data-user-id]"
+    );
+  }
+
+  function rowForCard(card){
+    const id =
+      card?.dataset?.userId;
+
+    return state.rows.find(
+      row =>
+        String(row.user_id) ===
+        String(id)
+    );
+  }
+
+  async function applyCard(
+    card,
+    {
+      forceActive = false,
+      forceConfirm = false
+    } = {}
+  ){
+    const row =
+      rowForCard(card);
+
+    if(!row){
+      throw new Error(
+        "계정 정보를 다시 불러와주세요."
+      );
+    }
+
+    const roleSelect =
+      card.querySelector(
+        "[data-role-select]"
+      );
+
+    const statusSelect =
+      card.querySelector(
+        "[data-status-select]"
+      );
+
+    const role =
+      roleSelect?.value ||
+      row.role;
+
+    const status =
+      forceActive
+        ? "active"
+        : (
+          statusSelect?.value ||
+          row.status
+        );
+
+    if(
+      role === "super_admin" &&
+      row.role !== "super_admin"
+    ){
+      const yes =
+        await askConfirm(
+          "최고관리자 권한 부여",
+          `
+            <div>
+              <b>${esc(row.display_name || row.email)}</b>
+              계정에 최고관리자 권한을 부여합니다.
+            </div>
+
+            <div class="dialogWarning">
+              최고관리자는 다른 계정의 역할, 승인 상태,
+              이메일 인증 상태까지 변경할 수 있습니다.
+            </div>
+          `,
+          "최고관리자로 변경"
+        );
+
+      if(!yes) return;
+    }
+
+    if(
+      forceConfirm &&
+      !row.email_confirmed
+    ){
+      const yes =
+        await askConfirm(
+          "승인 + 이메일 강제 인증",
+          `
+            <div>
+              <b>${esc(row.display_name || row.email)}</b>
+              계정을 활성화하면서 이메일 인증도 완료 처리합니다.
+            </div>
+
+            <div class="dialogWarning">
+              실제 가입 메일의 링크를 누르지 않아도
+              서버에서 이메일 인증 완료 상태로 변경됩니다.
+            </div>
+          `,
+          "승인 + 인증"
+        );
+
+      if(!yes) return;
+    }
+
+    setLoading(
+      true,
+      "계정 권한을 변경하는 중..."
+    );
+
+    await adminFetch(
+      "/admin/user/apply",
+      {
+        method:"POST",
+        body:JSON.stringify({
+          user_id:row.user_id,
+          role,
+          status,
+          confirm_email:forceConfirm
+        })
+      }
+    );
+
+    await loadUsers();
+  }
+
+  async function forceConfirmOnly(card){
+    const row =
+      rowForCard(card);
+
+    if(!row){
+      throw new Error(
+        "계정 정보를 다시 불러와주세요."
+      );
+    }
+
+    if(row.email_confirmed){
+      setStatus(
+        "이미 이메일 인증이 완료된 계정입니다.",
+        "ok"
+      );
+      return;
+    }
+
+    const yes =
+      await askConfirm(
+        "이메일 강제 인증",
+        `
+          <div>
+            <b>${esc(row.display_name || row.email)}</b>
+            계정의 이메일을 인증 완료 상태로 변경합니다.
+          </div>
+
+          <div class="dialogWarning">
+            이 기능은 사용자가 인증 메일 링크를 누르지 않아도
+            서버에서 즉시 인증 완료 처리합니다.
+            이메일 주소가 실제 사용자 주소인지 확인 후 진행하세요.
+          </div>
+        `,
+        "메일 인증 처리"
+      );
+
+    if(!yes) return;
+
+    setLoading(
+      true,
+      "이메일 인증 처리 중..."
+    );
+
+    await adminFetch(
+      "/admin/user/confirm-email",
+      {
+        method:"POST",
+        body:JSON.stringify({
+          user_id:row.user_id
+        })
+      }
+    );
+
+    await loadUsers();
+
+    setStatus(
+      "이메일 인증을 완료 처리했습니다.",
+      "ok"
+    );
+  }
+
+  function debounce(fn,delay){
+    let timer = null;
+
+    return (...args) => {
+      clearTimeout(timer);
+      timer =
+        setTimeout(
+          () => fn(...args),
+          delay
+        );
+    };
+  }
+
+  async function logout(){
+    try{
+      await state.supabase?.auth?.signOut();
+    }finally{
+      location.replace("/");
+    }
+  }
+
+  dom.reloadBtn.addEventListener(
+    "click",
+    loadUsers
+  );
+
+  dom.clearFilterBtn.addEventListener(
+    "click",
+    () => {
+      dom.searchInput.value = "";
+      dom.roleFilter.value = "";
+      dom.statusFilter.value = "";
+      dom.emailFilter.value = "";
+      loadUsers();
+    }
+  );
+
+  const delayedLoad =
+    debounce(
+      loadUsers,
+      280
+    );
+
+  dom.searchInput.addEventListener(
+    "input",
+    delayedLoad
+  );
+
+  [
+    dom.roleFilter,
+    dom.statusFilter,
+    dom.emailFilter
+  ].forEach(select => {
+    select.addEventListener(
+      "change",
+      loadUsers
+    );
+  });
+
+  dom.copySignupBtn.addEventListener(
+    "click",
+    async () => {
+      const url =
+        location.origin + "/signup";
+
+      try{
+        await navigator.clipboard.writeText(url);
+        setStatus(
+          "회원가입 링크를 복사했습니다.",
+          "ok"
+        );
+      }catch{
+        prompt(
+          "회원가입 링크",
+          url
+        );
+      }
+    }
+  );
+
+  dom.logoutBtn.addEventListener(
+    "click",
+    logout
+  );
+
+  dom.deniedHomeBtn.addEventListener(
+    "click",
+    () => location.replace("/home")
+  );
+
+  dom.deniedLogoutBtn.addEventListener(
+    "click",
+    logout
+  );
+
+  dom.userList.addEventListener(
+    "click",
+    event => {
+      const button =
+        event.target.closest(
+          "[data-action]"
+        );
+
+      if(!button) return;
+
+      const card =
+        cardFor(button);
+
+      const action =
+        button.dataset.action;
+
+      Promise.resolve()
+        .then(async () => {
+          if(action === "save"){
+            await applyCard(card);
+            return;
+          }
+
+          if(action === "approve"){
+            const row =
+              rowForCard(card);
+
+            await applyCard(
+              card,
+              {
+                forceActive:true,
+                forceConfirm:
+                  !row?.email_confirmed
+              }
+            );
+
+            return;
+          }
+
+          if(action === "confirm-email"){
+            await forceConfirmOnly(card);
+          }
+        })
+        .catch(error => {
+          console.error(error);
+
+          setStatus(
+            error?.message ||
+            String(error),
+            "err"
+          );
+
+          setLoading(false);
+        });
+    }
+  );
+
+  try{
+    const ready =
+      await initSupabase();
+
+    if(!ready) return;
+
+    const allowed =
+      await checkMe();
+
+    if(!allowed) return;
+
+    await loadUsers();
+
+  }catch(error){
+    console.error(error);
+
+    setStatus(
+      error?.message ||
+      String(error),
+      "err"
+    );
+  }
+})();
+</script>
+</body>
+</html>
