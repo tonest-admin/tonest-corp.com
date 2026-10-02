@@ -1,73 +1,1179 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="ko">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
-<title>TO:NEST</title>
-<meta name="theme-color" content="#16a7a4">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<style>
-:root{--bg:#f6f9f8;--card:#fff;--line:#dfe8e6;--line2:#edf3f2;--text:#172124;--muted:#708083;--primary:#16a7a4;--primary2:#118b89;--danger:#dc2626;--success:#15803d;--shadow:0 20px 50px rgba(15,45,47,.10);--shadow2:0 10px 28px rgba(20,70,68,.07);--radius:22px;--font:"Pretendard Variable","Pretendard","Noto Sans KR",system-ui,-apple-system,"Segoe UI",sans-serif}
-*{box-sizing:border-box}html,body{margin:0;min-height:100%;font-family:var(--font);color:var(--text)}html{background:radial-gradient(circle at 50% 0%,rgba(30,174,168,.10),transparent 38%),linear-gradient(180deg,#fff 0%,var(--bg) 72%,#eef5f3 100%)}body{background:transparent;-webkit-font-smoothing:antialiased}
-.wrap{min-height:100dvh;display:flex;align-items:center;justify-content:center;padding:clamp(14px,2.6vw,30px)}.auth-stack{width:min(100%,440px);display:flex;flex-direction:column;gap:14px}
-.logo-panel{position:relative;width:100%;aspect-ratio:1/1;border:1px solid var(--line);border-radius:30px;background:#fff;display:flex;align-items:center;justify-content:center;overflow:hidden;box-shadow:var(--shadow2)}
-.logo-panel:before{content:"";position:absolute;inset:18px;border:1px solid var(--line2);border-radius:24px;background:linear-gradient(180deg,#fff,#fbfefd)}.brand-logo-img{position:relative;z-index:1;width:82%;height:auto;max-height:72%;object-fit:contain;display:block}.brand-logo{position:relative;width:82%;height:82%;display:flex;flex-direction:column;align-items:center;justify-content:center}
-.symbol{position:relative;width:52%;aspect-ratio:1;margin-bottom:6%}.symbol .bowl{position:absolute;left:7%;bottom:5%;width:78%;height:58%;border-radius:0 0 50% 50%/0 0 74% 74%;background:linear-gradient(135deg,#69b468 6%,#15a8aa 72%);clip-path:polygon(0 0,34% 52%,66% 68%,100% 50%,86% 100%,38% 100%,11% 64%)}
-.symbol .leaf{position:absolute;right:14%;top:2%;width:38%;height:68%;border-radius:100% 0 100% 0;background:linear-gradient(150deg,#64b86a,#17a8aa 70%);transform:rotate(18deg);transform-origin:bottom left}.symbol .cut{position:absolute;right:8%;top:24%;width:42%;height:54%;background:#fff;border-radius:100% 0 100% 0;transform:rotate(20deg)}
-.wordmark{font-size:clamp(31px,6.8vw,54px);font-weight:800;letter-spacing:.30em;color:#999;margin-left:.30em;line-height:1}.tagline{margin-top:7%;font-size:clamp(10px,2.2vw,16px);font-weight:700;letter-spacing:.20em;color:#999}
-.card{width:100%;background:rgba(255,255,255,.98);border:1px solid var(--line);border-radius:var(--radius);padding:20px;box-shadow:var(--shadow)}
-.kicker{margin-bottom:8px;color:var(--primary2);font-size:11px;font-weight:800;letter-spacing:.16em}.title{margin:0 0 4px;font-size:29px;line-height:1.1;font-weight:850;letter-spacing:-.04em}.subtitle{margin:0 0 15px;color:var(--muted);font-size:12.5px;line-height:1.55;font-weight:600}
-.label{display:flex;justify-content:space-between;margin:10px 0 6px;color:#334345;font-size:12px;font-weight:800}input[type=email],input[type=password]{width:100%;height:43px;padding:0 13px;border-radius:14px;border:1px solid #cad8d6;background:#f8fbfa;color:var(--text);outline:none;font:700 15px var(--font)}
-input::placeholder{color:#9aa8aa;font-weight:600}input:focus{background:#fff;border-color:rgba(22,167,164,.72);box-shadow:0 0 0 3px rgba(22,167,164,.13)}
-.remember-actions{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px}.remember-row{display:flex;align-items:center;gap:7px;color:#536466;font-size:12px;font-weight:700;user-select:none}.remember-row input{width:16px;height:16px;margin:0;accent-color:var(--primary)}
-.text-btn{border:0;background:transparent;color:var(--primary2);font:800 12px var(--font);padding:0;cursor:pointer}.btn{width:100%;height:44px;margin-top:14px;border:1px solid rgba(17,139,137,.2);border-radius:14px;background:linear-gradient(180deg,#22b7b2,#16a7a4);color:#fff;font:800 15px var(--font);cursor:pointer;box-shadow:0 12px 24px rgba(22,167,164,.22)}
-.btn:hover{filter:brightness(1.035)}.btn:active{transform:translateY(1px)}.btn:disabled{opacity:.65;cursor:not-allowed}.status{min-height:18px;margin-top:9px;color:var(--muted);font-size:11.5px;line-height:1.45;white-space:pre-wrap;font-weight:650}.status.error{color:var(--danger)}.status.success{color:var(--success)}.footer{margin-top:11px;padding-top:11px;border-top:1px solid var(--line2);color:#97a3a4;font-size:10.5px;text-align:center;font-weight:650;letter-spacing:.02em}
-@media(max-width:760px){.wrap{padding:max(10px,env(safe-area-inset-top)) max(12px,env(safe-area-inset-right)) max(10px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left))}.auth-stack{width:min(100%,410px);gap:9px}.logo-panel{border-radius:22px}.logo-panel:before{inset:11px;border-radius:16px}.card{padding:14px;border-radius:19px}.title{font-size:26px}.subtitle{font-size:11.5px;margin-bottom:10px}.label{margin:7px 0 4px;font-size:11.5px}input[type=email],input[type=password]{height:39px;border-radius:12px;font-size:14px}.btn{height:40px;margin-top:10px;border-radius:12px;font-size:14px}}
-@media(max-height:720px){.logo-panel{max-height:42vh}.subtitle{display:none}}
-</style>
+  <meta charset="utf-8">
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover"
+  >
+
+  <title>TO:NEST</title>
+  <meta name="theme-color" content="#16a7a4">
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <style>
+    :root {
+      --bg: #f6f9f8;
+      --card: #ffffff;
+      --line: #dfe8e6;
+      --line-soft: #edf3f2;
+
+      --text: #172124;
+      --muted: #708083;
+
+      --primary: #16a7a4;
+      --primary-dark: #118b89;
+
+      --danger: #dc2626;
+      --success: #15803d;
+
+      --shadow:
+        0 20px 50px rgba(15, 45, 47, 0.10);
+
+      --shadow-soft:
+        0 10px 28px rgba(20, 70, 68, 0.07);
+
+      --radius: 22px;
+
+      --font:
+        "Pretendard Variable",
+        "Pretendard",
+        "Noto Sans KR",
+        system-ui,
+        -apple-system,
+        "Segoe UI",
+        sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      margin: 0;
+      min-height: 100%;
+      font-family: var(--font);
+      color: var(--text);
+    }
+
+    html {
+      background:
+        radial-gradient(
+          circle at 50% 0%,
+          rgba(30, 174, 168, 0.10),
+          transparent 38%
+        ),
+        linear-gradient(
+          180deg,
+          #ffffff 0%,
+          var(--bg) 72%,
+          #eef5f3 100%
+        );
+    }
+
+    body {
+      background: transparent;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    button,
+    input {
+      font-family: inherit;
+    }
+
+    .wrap {
+      min-height: 100dvh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+
+      padding:
+        clamp(14px, 2.6vw, 30px);
+    }
+
+    .auth-stack {
+      width: min(100%, 440px);
+
+      display: flex;
+      flex-direction: column;
+
+      gap: 14px;
+    }
+
+    /* =========================
+       LOGO
+       ========================= */
+
+    .logo-panel {
+      position: relative;
+
+      width: 100%;
+      aspect-ratio: 1 / 1;
+
+      display: flex;
+      align-items: center;
+      justify-content: center;
+
+      overflow: hidden;
+
+      background: #ffffff;
+
+      border: 1px solid var(--line);
+      border-radius: 30px;
+
+      box-shadow: var(--shadow-soft);
+    }
+
+    .logo-panel::before {
+      content: "";
+
+      position: absolute;
+
+      inset: 18px;
+
+      border: 1px solid var(--line-soft);
+      border-radius: 24px;
+
+      background:
+        linear-gradient(
+          180deg,
+          #ffffff 0%,
+          #fbfefd 100%
+        );
+    }
+
+    .brand-logo-img {
+      position: relative;
+      z-index: 1;
+
+      display: block;
+
+      width: 84%;
+      height: 84%;
+
+      object-fit: contain;
+      object-position: center;
+    }
+
+    /* =========================
+       LOGIN CARD
+       ========================= */
+
+    .card {
+      width: 100%;
+
+      padding: 20px;
+
+      background:
+        rgba(255, 255, 255, 0.98);
+
+      border:
+        1px solid var(--line);
+
+      border-radius:
+        var(--radius);
+
+      box-shadow:
+        var(--shadow);
+    }
+
+    .kicker {
+      margin-bottom: 8px;
+
+      color:
+        var(--primary-dark);
+
+      font-size: 11px;
+      font-weight: 800;
+
+      letter-spacing: 0.16em;
+    }
+
+    .title {
+      margin:
+        0 0 4px;
+
+      font-size:
+        29px;
+
+      line-height:
+        1.1;
+
+      font-weight:
+        850;
+
+      letter-spacing:
+        -0.04em;
+    }
+
+    .subtitle {
+      margin:
+        0 0 15px;
+
+      color:
+        var(--muted);
+
+      font-size:
+        12.5px;
+
+      line-height:
+        1.55;
+
+      font-weight:
+        600;
+    }
+
+    .label {
+      display:
+        flex;
+
+      justify-content:
+        space-between;
+
+      margin:
+        10px 0 6px;
+
+      color:
+        #334345;
+
+      font-size:
+        12px;
+
+      font-weight:
+        800;
+    }
+
+    input[type="email"],
+    input[type="password"] {
+      width:
+        100%;
+
+      height:
+        43px;
+
+      padding:
+        0 13px;
+
+      border:
+        1px solid #cad8d6;
+
+      border-radius:
+        14px;
+
+      background:
+        #f8fbfa;
+
+      color:
+        var(--text);
+
+      outline:
+        none;
+
+      font-size:
+        15px;
+
+      font-weight:
+        700;
+
+      transition:
+        border-color 0.15s ease,
+        box-shadow 0.15s ease,
+        background 0.15s ease;
+    }
+
+    input::placeholder {
+      color:
+        #9aa8aa;
+
+      font-weight:
+        600;
+    }
+
+    input:focus {
+      background:
+        #ffffff;
+
+      border-color:
+        rgba(22, 167, 164, 0.72);
+
+      box-shadow:
+        0 0 0 3px rgba(22, 167, 164, 0.13);
+    }
+
+    .remember-actions {
+      display:
+        flex;
+
+      align-items:
+        center;
+
+      justify-content:
+        space-between;
+
+      gap:
+        10px;
+
+      margin-top:
+        12px;
+    }
+
+    .remember-row {
+      display:
+        flex;
+
+      align-items:
+        center;
+
+      gap:
+        7px;
+
+      color:
+        #536466;
+
+      font-size:
+        12px;
+
+      font-weight:
+        700;
+
+      user-select:
+        none;
+
+      cursor:
+        pointer;
+    }
+
+    .remember-row input {
+      width:
+        16px;
+
+      height:
+        16px;
+
+      margin:
+        0;
+
+      accent-color:
+        var(--primary);
+    }
+
+    .text-btn {
+      padding:
+        0;
+
+      border:
+        0;
+
+      background:
+        transparent;
+
+      color:
+        var(--primary-dark);
+
+      font-size:
+        12px;
+
+      font-weight:
+        800;
+
+      cursor:
+        pointer;
+    }
+
+    .text-btn:hover {
+      text-decoration:
+        underline;
+    }
+
+    .btn {
+      width:
+        100%;
+
+      height:
+        44px;
+
+      margin-top:
+        14px;
+
+      border:
+        1px solid rgba(17, 139, 137, 0.2);
+
+      border-radius:
+        14px;
+
+      background:
+        linear-gradient(
+          180deg,
+          #22b7b2 0%,
+          #16a7a4 100%
+        );
+
+      color:
+        #ffffff;
+
+      font-size:
+        15px;
+
+      font-weight:
+        800;
+
+      cursor:
+        pointer;
+
+      box-shadow:
+        0 12px 24px rgba(22, 167, 164, 0.22);
+
+      transition:
+        transform 0.15s ease,
+        filter 0.15s ease;
+    }
+
+    .btn:hover {
+      filter:
+        brightness(1.035);
+    }
+
+    .btn:active {
+      transform:
+        translateY(1px);
+    }
+
+    .btn:disabled {
+      opacity:
+        0.65;
+
+      cursor:
+        not-allowed;
+    }
+
+    .status {
+      min-height:
+        18px;
+
+      margin-top:
+        9px;
+
+      color:
+        var(--muted);
+
+      font-size:
+        11.5px;
+
+      line-height:
+        1.45;
+
+      white-space:
+        pre-wrap;
+
+      font-weight:
+        650;
+    }
+
+    .status.error {
+      color:
+        var(--danger);
+    }
+
+    .status.success {
+      color:
+        var(--success);
+    }
+
+    .footer {
+      margin-top:
+        11px;
+
+      padding-top:
+        11px;
+
+      border-top:
+        1px solid var(--line-soft);
+
+      color:
+        #97a3a4;
+
+      font-size:
+        10.5px;
+
+      text-align:
+        center;
+
+      font-weight:
+        650;
+
+      letter-spacing:
+        0.02em;
+    }
+
+    /* =========================
+       MOBILE
+       ========================= */
+
+    @media (max-width: 760px) {
+
+      .wrap {
+        padding:
+          max(10px, env(safe-area-inset-top))
+          max(12px, env(safe-area-inset-right))
+          max(10px, env(safe-area-inset-bottom))
+          max(12px, env(safe-area-inset-left));
+      }
+
+      .auth-stack {
+        width:
+          min(100%, 410px);
+
+        gap:
+          9px;
+      }
+
+      .logo-panel {
+        border-radius:
+          22px;
+      }
+
+      .logo-panel::before {
+        inset:
+          11px;
+
+        border-radius:
+          16px;
+      }
+
+      .brand-logo-img {
+        width:
+          86%;
+
+        height:
+          86%;
+      }
+
+      .card {
+        padding:
+          14px;
+
+        border-radius:
+          19px;
+      }
+
+      .title {
+        font-size:
+          26px;
+      }
+
+      .subtitle {
+        margin-bottom:
+          10px;
+
+        font-size:
+          11.5px;
+      }
+
+      .label {
+        margin:
+          7px 0 4px;
+
+        font-size:
+          11.5px;
+      }
+
+      input[type="email"],
+      input[type="password"] {
+        height:
+          39px;
+
+        border-radius:
+          12px;
+
+        font-size:
+          14px;
+      }
+
+      .btn {
+        height:
+          40px;
+
+        margin-top:
+          10px;
+
+        border-radius:
+          12px;
+
+        font-size:
+          14px;
+      }
+
+    }
+
+    @media (max-height: 720px) {
+
+      .logo-panel {
+        max-height:
+          42vh;
+      }
+
+      .subtitle {
+        display:
+          none;
+      }
+
+    }
+  </style>
 </head>
+
 <body>
-<div class="wrap"><main class="auth-stack">
-<section class="logo-panel" aria-label="TO:NEST"><img class="brand-logo-img" src="/tonest-logo.svg" alt="TO:NEST"></section>
-<section class="card"><div class="kicker">TO:NEST OPERATIONS</div><h1 class="title">濡쒓렇??/h1><p class="subtitle">TO:NEST ?댁쁺 ?쒖뒪?쒖뿉 ?묒냽?⑸땲??</p>
-<label class="label" for="email">?대찓??/label><input id="email" type="email" placeholder="name@company.com" autocomplete="username">
-<label class="label" for="password">鍮꾨?踰덊샇</label><input id="password" type="password" placeholder="鍮꾨?踰덊샇 ?낅젰" autocomplete="current-password">
-<div class="remember-actions"><label class="remember-row"><input id="rememberEmail" type="checkbox"><span>?꾩씠?????/span></label><button class="text-btn" id="forgotPassword" type="button">鍮꾨?踰덊샇 李얘린</button></div>
-<button class="btn" id="signIn" type="button">濡쒓렇??/button><div class="status" id="status" aria-live="polite"></div><div class="footer">THE POWER TO ATTRACT PEOPLE</div></section>
-</main></div>
-<script>
-(()=>{
-const CONFIG=window.TONEST_CONFIG||{};
-const SUPABASE_URL=CONFIG.SUPABASE_URL||"https://vgwyhdqofjzqfajtolaj.supabase.co";
-const SUPABASE_ANON_KEY=CONFIG.SUPABASE_ANON_KEY||"";
-const NEXT_PATH=CONFIG.NEXT_PATH||"/home";
-const SAVED_EMAIL_KEY="tonest_saved_login_email";
-const email=document.getElementById("email"),password=document.getElementById("password"),rememberEmail=document.getElementById("rememberEmail"),signInBtn=document.getElementById("signIn"),forgotPassword=document.getElementById("forgotPassword"),status=document.getElementById("status");
-const setStatus=(message,type)=>{status.textContent=message||"";status.className="status"+(type?" "+type:"")};
-try{const saved=localStorage.getItem(SAVED_EMAIL_KEY)||"";if(saved){email.value=saved;rememberEmail.checked=true}}catch{}
-const client=(SUPABASE_URL&&SUPABASE_ANON_KEY&&window.supabase?.createClient)?window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}}):null;
-async function signIn(){
- const em=(email.value||"").trim().toLowerCase(),pw=password.value||"";
- if(!em)return setStatus("?대찓?쇱쓣 ?낅젰?댁＜?몄슂.","error");
- if(!pw)return setStatus("鍮꾨?踰덊샇瑜??낅젰?댁＜?몄슂.","error");
- if(!client)return setStatus("Supabase 濡쒓렇?????곌껐 ?꾩엯?덈떎.","error");
- signInBtn.disabled=true;setStatus("濡쒓렇??以?..");
- try{
-  const {error}=await client.auth.signInWithPassword({email:em,password:pw});if(error)throw error;
-  try{if(rememberEmail.checked)localStorage.setItem(SAVED_EMAIL_KEY,em);else localStorage.removeItem(SAVED_EMAIL_KEY)}catch{}
-  setStatus("濡쒓렇???깃났","success");location.replace(NEXT_PATH);
- }catch(err){setStatus("濡쒓렇???ㅽ뙣: "+(err?.message||String(err)),"error")}finally{signInBtn.disabled=false}
-}
-async function resetPassword(){
- const em=(email.value||"").trim().toLowerCase();
- if(!em)return setStatus("?대찓?쇱쓣 癒쇱? ?낅젰?댁＜?몄슂.","error");
- if(!client)return setStatus("Supabase 濡쒓렇?????곌껐 ?꾩엯?덈떎.","error");
- try{setStatus("鍮꾨?踰덊샇 ?ъ꽕??硫붿씪 諛쒖넚 以?..");const {error}=await client.auth.resetPasswordForEmail(em,{redirectTo:location.origin+"/"});if(error)throw error;setStatus("鍮꾨?踰덊샇 ?ъ꽕??硫붿씪??蹂대깉?듬땲??","success")}catch(err){setStatus("硫붿씪 諛쒖넚 ?ㅽ뙣: "+(err?.message||String(err)),"error")}
-}
-signInBtn.addEventListener("click",signIn);forgotPassword.addEventListener("click",resetPassword);password.addEventListener("keydown",e=>{if(e.key==="Enter")signIn()});
-if(client)client.auth.getSession().then(({data})=>{if(data?.session)location.replace(NEXT_PATH)}).catch(()=>{});
-})();
-</script>
+
+  <div class="wrap">
+
+    <main class="auth-stack">
+
+      <section
+        class="logo-panel"
+        aria-label="TO:NEST"
+      >
+        <img
+          class="brand-logo-img"
+          src="./logo.png"
+          alt="TO:NEST"
+        >
+      </section>
+
+
+      <section class="card">
+
+        <div class="kicker">
+          TO:NEST OPERATIONS
+        </div>
+
+        <h1 class="title">
+          로그인
+        </h1>
+
+        <p class="subtitle">
+          TO:NEST 운영 시스템에 접속합니다.
+        </p>
+
+
+        <label
+          class="label"
+          for="email"
+        >
+          이메일
+        </label>
+
+        <input
+          id="email"
+          type="email"
+          placeholder="name@company.com"
+          autocomplete="username"
+        >
+
+
+        <label
+          class="label"
+          for="password"
+        >
+          비밀번호
+        </label>
+
+        <input
+          id="password"
+          type="password"
+          placeholder="비밀번호 입력"
+          autocomplete="current-password"
+        >
+
+
+        <div class="remember-actions">
+
+          <label class="remember-row">
+
+            <input
+              id="rememberEmail"
+              type="checkbox"
+            >
+
+            <span>
+              아이디 저장
+            </span>
+
+          </label>
+
+
+          <button
+            class="text-btn"
+            id="forgotPassword"
+            type="button"
+          >
+            비밀번호 찾기
+          </button>
+
+        </div>
+
+
+        <button
+          class="btn"
+          id="signIn"
+          type="button"
+        >
+          로그인
+        </button>
+
+
+        <div
+          class="status"
+          id="status"
+          aria-live="polite"
+        ></div>
+
+
+        <div class="footer">
+          THE POWER TO ATTRACT PEOPLE
+        </div>
+
+      </section>
+
+    </main>
+
+  </div>
+
+
+  <script>
+    (() => {
+
+      const CONFIG =
+        window.TONEST_CONFIG || {};
+
+
+      const SUPABASE_URL =
+        CONFIG.SUPABASE_URL ||
+        "https://vgwyhdqofjzqfajtolaj.supabase.co";
+
+
+      /*
+       * 나중에 실제 Supabase Publishable / anon key 입력
+       */
+      const SUPABASE_ANON_KEY =
+        CONFIG.SUPABASE_ANON_KEY ||
+        "";
+
+
+      const NEXT_PATH =
+        CONFIG.NEXT_PATH ||
+        "/home";
+
+
+      const SAVED_EMAIL_KEY =
+        "tonest_saved_login_email";
+
+
+      const email =
+        document.getElementById("email");
+
+      const password =
+        document.getElementById("password");
+
+      const rememberEmail =
+        document.getElementById("rememberEmail");
+
+      const signInBtn =
+        document.getElementById("signIn");
+
+      const forgotPassword =
+        document.getElementById("forgotPassword");
+
+      const status =
+        document.getElementById("status");
+
+
+      function setStatus(message, type = "") {
+
+        status.textContent =
+          message || "";
+
+        status.className =
+          "status" +
+          (type ? " " + type : "");
+
+      }
+
+
+      /*
+       * 저장된 이메일 불러오기
+       */
+      try {
+
+        const savedEmail =
+          localStorage.getItem(
+            SAVED_EMAIL_KEY
+          ) || "";
+
+        if (savedEmail) {
+
+          email.value =
+            savedEmail;
+
+          rememberEmail.checked =
+            true;
+
+        }
+
+      } catch (error) {
+
+        console.warn(
+          "저장된 이메일을 불러오지 못했습니다.",
+          error
+        );
+
+      }
+
+
+      /*
+       * Supabase client
+       */
+      const client =
+        (
+          SUPABASE_URL &&
+          SUPABASE_ANON_KEY &&
+          window.supabase?.createClient
+        )
+          ? window.supabase.createClient(
+              SUPABASE_URL,
+              SUPABASE_ANON_KEY,
+              {
+                auth: {
+                  persistSession: true,
+                  autoRefreshToken: true,
+                  detectSessionInUrl: true
+                }
+              }
+            )
+          : null;
+
+
+      /*
+       * 로그인
+       */
+      async function signIn() {
+
+        const em =
+          (email.value || "")
+            .trim()
+            .toLowerCase();
+
+        const pw =
+          password.value || "";
+
+
+        if (!em) {
+
+          setStatus(
+            "이메일을 입력해주세요.",
+            "error"
+          );
+
+          email.focus();
+
+          return;
+
+        }
+
+
+        if (!pw) {
+
+          setStatus(
+            "비밀번호를 입력해주세요.",
+            "error"
+          );
+
+          password.focus();
+
+          return;
+
+        }
+
+
+        if (!client) {
+
+          setStatus(
+            "Supabase 로그인 키 연결 전입니다.",
+            "error"
+          );
+
+          return;
+
+        }
+
+
+        signInBtn.disabled =
+          true;
+
+        signInBtn.textContent =
+          "로그인 중...";
+
+        setStatus(
+          "로그인 중..."
+        );
+
+
+        try {
+
+          const { error } =
+            await client.auth
+              .signInWithPassword({
+                email: em,
+                password: pw
+              });
+
+
+          if (error) {
+            throw error;
+          }
+
+
+          try {
+
+            if (
+              rememberEmail.checked
+            ) {
+
+              localStorage.setItem(
+                SAVED_EMAIL_KEY,
+                em
+              );
+
+            } else {
+
+              localStorage.removeItem(
+                SAVED_EMAIL_KEY
+              );
+
+            }
+
+          } catch (storageError) {
+
+            console.warn(
+              "아이디 저장에 실패했습니다.",
+              storageError
+            );
+
+          }
+
+
+          setStatus(
+            "로그인 성공",
+            "success"
+          );
+
+
+          location.replace(
+            NEXT_PATH
+          );
+
+        } catch (error) {
+
+          console.error(
+            error
+          );
+
+
+          let message =
+            error?.message ||
+            "로그인에 실패했습니다.";
+
+
+          if (
+            message ===
+            "Invalid login credentials"
+          ) {
+
+            message =
+              "이메일 또는 비밀번호가 올바르지 않습니다.";
+
+          }
+
+
+          setStatus(
+            message,
+            "error"
+          );
+
+        } finally {
+
+          signInBtn.disabled =
+            false;
+
+          signInBtn.textContent =
+            "로그인";
+
+        }
+
+      }
+
+
+      /*
+       * 비밀번호 재설정
+       */
+      async function resetPassword() {
+
+        const em =
+          (email.value || "")
+            .trim()
+            .toLowerCase();
+
+
+        if (!em) {
+
+          setStatus(
+            "이메일을 먼저 입력해주세요.",
+            "error"
+          );
+
+          email.focus();
+
+          return;
+
+        }
+
+
+        if (!client) {
+
+          setStatus(
+            "Supabase 로그인 키 연결 전입니다.",
+            "error"
+          );
+
+          return;
+
+        }
+
+
+        try {
+
+          setStatus(
+            "비밀번호 재설정 메일 발송 중..."
+          );
+
+
+          const { error } =
+            await client.auth
+              .resetPasswordForEmail(
+                em,
+                {
+                  redirectTo:
+                    location.origin + "/"
+                }
+              );
+
+
+          if (error) {
+            throw error;
+          }
+
+
+          setStatus(
+            "비밀번호 재설정 메일을 보냈습니다.",
+            "success"
+          );
+
+        } catch (error) {
+
+          console.error(
+            error
+          );
+
+
+          setStatus(
+            "메일 발송 실패: " +
+            (
+              error?.message ||
+              "알 수 없는 오류"
+            ),
+            "error"
+          );
+
+        }
+
+      }
+
+
+      /*
+       * Event
+       */
+      signInBtn.addEventListener(
+        "click",
+        signIn
+      );
+
+
+      forgotPassword.addEventListener(
+        "click",
+        resetPassword
+      );
+
+
+      password.addEventListener(
+        "keydown",
+        (event) => {
+
+          if (
+            event.key === "Enter"
+          ) {
+
+            signIn();
+
+          }
+
+        }
+      );
+
+
+      email.addEventListener(
+        "keydown",
+        (event) => {
+
+          if (
+            event.key === "Enter"
+          ) {
+
+            password.focus();
+
+          }
+
+        }
+      );
+
+
+      /*
+       * 기존 세션이 있으면 이동
+       */
+      if (client) {
+
+        client.auth
+          .getSession()
+          .then(({ data }) => {
+
+            if (
+              data?.session
+            ) {
+
+              location.replace(
+                NEXT_PATH
+              );
+
+            }
+
+          })
+          .catch(
+            console.error
+          );
+
+      }
+
+    })();
+  </script>
+
 </body>
 </html>
-
