@@ -4,12 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
   <title>TO:NEST 로그인</title>
-  <link rel="icon" href="/favicon.ico?v=2" type="image/x-icon">
-  <link rel="shortcut icon" href="/favicon.ico?v=2" type="image/x-icon">
   <meta name="theme-color" content="#16a7a4">
-  <link rel="icon" href="./favicon.ico" type="image/x-icon">
-  <link rel="shortcut icon" href="./favicon.ico" type="image/x-icon">
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link rel="icon" href="/favicon.ico?v=3" type="image/x-icon">
+  <link rel="shortcut icon" href="/favicon.ico?v=3" type="image/x-icon">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
     :root{
       --bg:#f6f9f8;--card:#fff;--line:#dfe8e6;--line2:#edf3f2;
@@ -93,7 +91,7 @@
 <div class="wrap">
   <main class="auth-stack">
     <section class="logo-panel" aria-label="TO:NEST">
-      <img class="brand-logo-img" src="./logo.png" alt="TO:NEST">
+      <img class="brand-logo-img" src="/logo.png" alt="TO:NEST">
     </section>
 
     <section class="card">
@@ -115,7 +113,7 @@
       </div>
 
       <button class="btn" id="signIn" type="button">로그인</button>
-      <a class="btn secondary" href="./signup">회원가입</a>
+      <a class="btn secondary" href="/signup">회원가입</a>
 
       <div class="status" id="status" aria-live="polite"></div>
       <div class="footer">THE POWER TO ATTRACT PEOPLE</div>
@@ -125,7 +123,7 @@
 
 <script>
 (() => {
-  const AUTH_WORKER_URL = "https://login.tonest-admin.workers.dev";
+  const AUTH_WORKER_URL = "";
   const SAVED_EMAIL_KEY = "tonest_saved_login_email";
 
   const email = document.getElementById("email");
