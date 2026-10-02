@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Home | TO:NEST</title>
+  <link rel="icon" href="/favicon.ico?v=5" type="image/x-icon">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="/board-menu.js?v=1" defer></script>
+  <style>
+    :root{
+      --bg:#f3f8f7;--card:#fff;--line:#dce7e5;--line2:#cbd8d6;
+      --text:#172124;--muted:#6c7d7f;--primary:#16a7a4;--primary2:#118b89;
+      --danger:#dc2626;--shadow:0 12px 32px rgba(15,45,47,.08);
+      --font:"Pretendard Variable","Pretendard","Noto Sans KR",system-ui,-apple-system,"Segoe UI",sans-serif
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0;min-height:100%;font-family:var(--font);color:var(--text);background:var(--bg)}
+    button,a{font:inherit}
+    .wrap{width:min(1180px,100%);margin:auto;padding:12px}
+    .card{background:#fff;border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow)}
+    .top{display:flex;align-items:center;gap:10px;padding:12px 14px;margin-bottom:12px;position:sticky;top:6px;z-index:10}
+    .menuLogoBtn{width:40px;height:40px;padding:0;border:0;background:#fff;border-radius:11px;display:grid;place-items:center;cursor:pointer}
+    .logo{width:36px;height:36px;object-fit:contain}
+    .brand{font-size:20px;font-weight:850;letter-spacing:-.03em}
+    .sub{margin-top:2px;color:var(--muted);font-size:11px;font-weight:600}
+    .grow{flex:1}
+    .pill{display:inline-flex;align-items:center;height:36px;padding:0 12px;border:1px solid var(--line2);border-radius:999px;background:#fff;color:#4d6062;font-size:11px;font-weight:700}
+    .btn{height:36px;padding:0 13px;border:1px solid var(--line2);border-radius:10px;background:#fff;color:#334345;font-weight:750;cursor:pointer}
+    .btn.danger{color:var(--danger);border-color:#fecaca}
+    .hero{padding:24px;margin-bottom:12px;background:linear-gradient(135deg,#fff 0%,#f1fbf9 100%)}
+    .heroKicker{color:var(--primary2);font-size:11px;font-weight:850;letter-spacing:.15em}
+    .hero h1{margin:7px 0 5px;font-size:30px;letter-spacing:-.045em}
+    .hero p{margin:0;color:var(--muted);font-size:13px;line-height:1.6}
+    .grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+    .menuCard{display:block;text-decoration:none;color:inherit;padding:20px;transition:.15s}
+    .menuCard:hover{transform:translateY(-1px);border-color:#9fd8d4}
+    .menuIcon{width:42px;height:42px;border-radius:13px;background:#e9f8f6;color:var(--primary2);display:grid;place-items:center;font-size:20px;font-weight:900}
+    .menuTitle{margin-top:13px;font-size:17px;font-weight:850}
+    .menuDesc{margin-top:5px;color:var(--muted);font-size:11.5px;line-height:1.55}
+    .status{margin-top:12px;min-height:18px;color:var(--muted);font-size:11px}
+    .status.err{color:var(--danger)}
+    @media(max-width:800px){.grid{grid-template-columns:1fr}.wrap{padding:7px}.pill{display:none}.hero{padding:18px}.hero h1{font-size:26px}}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <header class="card top">
+    <button id="tnBoardMenuToggle" class="menuLogoBtn" type="button" aria-label="TO:NEST 메뉴 열기">
+      <img class="logo" src="/logo.png" alt="TO:NEST">
+    </button>
+    <div>
+      <div class="brand">TO:NEST</div>
+      <div class="sub">OPERATIONS</div>
+    </div>
+    <div class="grow"></div>
+    <span id="userPill" class="pill">권한 확인 중</span>
+    <button id="logoutBtn" class="btn danger" type="button">로그아웃</button>
+  </header>
+
+  <section class="card hero">
+    <div class="heroKicker">TO:NEST OPERATIONS</div>
+    <h1 id="welcomeTitle">Home</h1>
+    <p>투네스트 운영 시스템입니다.</p>
+  </section>
+
+  <section class="grid">
+    <a class="card menuCard" href="/tonest_info">
+      <div class="menuIcon">i</div>
+      <div class="menuTitle">TO:NEST 정보</div>
+      <div class="menuDesc">인사 · 운영 기본정보를 조회하고 관리합니다.</div>
+    </a>
+  </section>
+
+  <div id="status" class="status"></div>
+</div>
+
+<script>
+(() => {
+  const AUTH_BASE = location.origin;
+  const statusEl = document.getElementById("status");
+  const userPill = document.getElementById("userPill");
+  const welcomeTitle = document.getElementById("welcomeTitle");
+  const logoutBtn = document.getElementById("logoutBtn");
+
+  let client = null;
+
+  const roleLabel = role => ({
+    super_admin:"최고관리자",
+    admin:"관리자",
+    team_leader:"팀장",
+    driver:"기사"
+  })[role] || role || "-";
+
+  function status(message, isError=false){
+    statusEl.textContent = message || "";
+    statusEl.className = "status" + (isError ? " err" : "");
+  }
+
+  async function init(){
+    const cfgRes = await fetch(AUTH_BASE + "/auth-config", {cache:"no-store"});
+    const cfg = await cfgRes.json().catch(()=>({}));
+
+    if(!cfgRes.ok || !cfg.supabaseUrl || !cfg.supabaseKey){
+      throw new Error(cfg.message || "로그인 설정을 불러오지 못했습니다.");
+    }
+
+    client = window.supabase.createClient(
+      cfg.supabaseUrl,
+      cfg.supabaseKey,
+      {
+        auth:{
+          persistSession:true,
+          storage:sessionStorage,
+          autoRefreshToken:true,
+          detectSessionInUrl:true
+        }
+      }
+    );
+
+    const {data:{session}} = await client.auth.getSession();
+
+    if(!session?.user?.id){
+      location.replace("/?next=%2Fhome");
+      return;
+    }
+
+    const {data:profile,error} = await client
+      .from("profiles")
+      .select("display_name,email,role,status")
+      .eq("user_id",session.user.id)
+      .maybeSingle();
+
+    if(error) throw error;
+
+    if(!profile || profile.status !== "active"){
+      await client.auth.signOut();
+      location.replace("/");
+      return;
+    }
+
+    userPill.textContent = `${profile.display_name || profile.email || "사용자"} · ${roleLabel(profile.role)}`;
+    welcomeTitle.textContent = `${profile.display_name || "사용자"}님, 안녕하세요.`;
+  }
+
+  logoutBtn.addEventListener("click", async ()=>{
+    try{
+      await client?.auth?.signOut();
+    }finally{
+      location.replace("/");
+    }
+  });
+
+  init().catch(error=>{
+    console.error(error);
+    status(error?.message || String(error), true);
+  });
+})();
+</script>
+</body>
+</html>
