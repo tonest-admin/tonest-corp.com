@@ -96,11 +96,7 @@
 
         <label class="label" for="email">이메일</label>
         <input id="email" type="email" placeholder="name@company.com" autocomplete="email" maxlength="254">
-
-        <label class="label" for="phone">연락처</label>
-        <input id="phone" type="tel" placeholder="010-0000-0000" autocomplete="tel" maxlength="30">
-
-        <label class="label" for="password">비밀번호</label>
+<label class="label" for="password">비밀번호</label>
         <input id="password" type="password" placeholder="8자 이상" autocomplete="new-password">
         <div class="hint">비밀번호는 8자 이상 입력해주세요.</div>
 
@@ -125,7 +121,6 @@
   const form = document.getElementById("signupForm");
   const displayName = document.getElementById("displayName");
   const email = document.getElementById("email");
-  const phone = document.getElementById("phone");
   const password = document.getElementById("password");
   const passwordConfirm = document.getElementById("passwordConfirm");
   const submitBtn = document.getElementById("submitBtn");
@@ -135,17 +130,11 @@
     status.textContent = message || "";
     status.className = "status" + (type ? " " + type : "");
   };
-
-  function normalizePhone(value) {
-    return String(value || "").trim();
-  }
-
-  async function submitSignup(event) {
+async function submitSignup(event) {
     event.preventDefault();
 
     const nameValue = (displayName.value || "").trim();
     const emailValue = (email.value || "").trim().toLowerCase();
-    const phoneValue = normalizePhone(phone.value);
     const passwordValue = password.value || "";
     const confirmValue = passwordConfirm.value || "";
 
@@ -186,7 +175,6 @@
         body: JSON.stringify({
           display_name: nameValue,
           email: emailValue,
-          phone: phoneValue,
           password: passwordValue
         })
       });
