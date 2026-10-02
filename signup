@@ -120,7 +120,7 @@
 
 <script>
 (() => {
-  const AUTH_WORKER_URL = "";
+  const AUTH_WORKER_URL = "https://login.tonest-admin.workers.dev";
 
   const form = document.getElementById("signupForm");
   const displayName = document.getElementById("displayName");
