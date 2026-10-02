@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>TO:NEST 정보</title>
+  <link rel="icon" href="/favicon.ico?v=4" type="image/x-icon">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    :root{
+      --bg:#f4f8f7;--card:#fff;--line:#dce7e5;--line2:#cbd8d6;
+      --text:#172124;--muted:#6d7d80;--primary:#16a7a4;--primary2:#118b89;
+      --danger:#dc2626;--ok:#15803d;--shadow:0 12px 32px rgba(15,45,47,.08);
+      --font:"Pretendard Variable","Pretendard","Noto Sans KR",system-ui,-apple-system,"Segoe UI",sans-serif
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0;min-height:100%;font-family:var(--font);color:var(--text);background:var(--bg)}
+    button,input,select,textarea{font:inherit}
+    .wrap{width:min(1500px,100%);margin:auto;padding:12px}
+    .card{background:#fff;border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow)}
+    .top{display:flex;align-items:center;gap:10px;padding:12px 14px;margin-bottom:10px}
+    .logo{width:34px;height:34px;object-fit:contain}
+    .title{font-size:20px;font-weight:800}.sub{font-size:11px;color:var(--muted);margin-top:2px}
+    .grow{flex:1}.pill{padding:8px 11px;border:1px solid var(--line2);border-radius:999px;font-size:11px;color:#526466}
+    .btn{height:36px;padding:0 12px;border:1px solid var(--line2);border-radius:10px;background:#fff;color:#334345;cursor:pointer;font-weight:700}
+    .btn.primary{background:var(--primary);border-color:var(--primary);color:#fff}
+    .btn.danger{border-color:#fecaca;color:#dc2626}
+    .toolbar{display:flex;align-items:center;gap:8px;padding:10px 12px;margin-bottom:10px}
+    .toolbar input{height:36px;min-width:260px;padding:0 11px;border:1px solid var(--line2);border-radius:10px;outline:none}
+    .tableWrap{overflow:auto;border-radius:18px}
+    table{width:100%;min-width:1350px;border-collapse:separate;border-spacing:0;background:#fff}
+    th,td{border-right:1px solid var(--line);border-bottom:1px solid var(--line);padding:7px 8px;font-size:11px}
+    th{position:sticky;top:0;z-index:2;background:#eaf5f3;color:#2a4a4c;font-weight:800;white-space:nowrap}
+    td input,td select{width:100%;height:32px;padding:0 7px;border:1px solid transparent;border-radius:7px;background:transparent}
+    td input:focus,td select:focus{outline:none;border-color:#8dd4d1;background:#fff}
+    tr.resigned td{background:#fff0ef}
+    .status{min-height:20px;margin:8px 2px 0;color:var(--muted);font-size:11px}.status.err{color:var(--danger)}.status.ok{color:var(--ok)}
+    .empty{padding:30px;text-align:center;color:var(--muted)}
+    @media(max-width:760px){.wrap{padding:6px}.top{border-radius:0}.pill{display:none}.toolbar{flex-wrap:wrap}.toolbar input{min-width:0;flex:1}}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <header class="card top">
+    <img class="logo" src="/logo.png" alt="TO:NEST">
+    <div>
+      <div class="title">TO:NEST 정보</div>
+      <div class="sub">인사 · 운영 기본정보 관리</div>
+    </div>
+    <div class="grow"></div>
+    <span id="rolePill" class="pill">권한 확인 중</span>
+    <button id="homeBtn" class="btn" type="button">Home</button>
+    <button id="logoutBtn" class="btn danger" type="button">로그아웃</button>
+  </header>
+
+  <section class="card toolbar">
+    <input id="search" type="search" placeholder="이름 / 쿠팡ID / 캠프 검색">
+    <button id="reloadBtn" class="btn" type="button">새로고침</button>
+    <button id="addBtn" class="btn primary" type="button">추가</button>
+    <button id="saveBtn" class="btn primary" type="button">변경사항 저장</button>
+  </section>
+
+  <section class="card tableWrap">
+    <table>
+      <thead>
+        <tr>
+          <th>이름</th><th>연락처</th><th>직책</th><th>쿠팡ID</th>
+          <th>캠프</th><th>주/야</th><th>차량번호</th><th>운송자격증</th>
+          <th>사업자 상호</th><th>사업자번호</th><th>은행</th><th>계좌</th>
+          <th>입사일</th><th>퇴사예정일</th><th>퇴사</th><th>고용산재</th>
+          <th>메모</th><th>삭제</th>
+        </tr>
+      </thead>
+      <tbody id="body"></tbody>
+    </table>
+    <div id="empty" class="empty" hidden>등록된 정보가 없습니다.</div>
+  </section>
+
+  <div id="status" class="status"></div>
+</div>
+
+<script>
+(() => {
+  const AUTH_WORKER = "https://login.tonest-admin.workers.dev";
+  const INFO_WORKER = "https://tonest-info.tonest-admin.workers.dev";
+
+  const state = {
+    sb: null,
+    session: null,
+    role: "",
+    rows: [],
+    admin: false
+  };
+
+  const $ = id => document.getElementById(id);
+  const FIELDS = [
+    "person_name","contact_phone","position_title","coupang_id",
+    "camp_code","wave","vehicle_plate_number","transport_qualification_number",
+    "business_name","business_registration_number","payroll_bank_name",
+    "payroll_account_number","hire_date","resignation_scheduled_date",
+    "is_resigned","employment_accident_insurance","memo"
+  ];
+
+  const roleLabel = role => ({
+    super_admin:"최고관리자",
+    admin:"관리자",
+    team_leader:"팀장",
+    driver:"기사"
+  })[role] || role || "-";
+
+  function status(msg, type=""){
+    $("status").textContent = msg || "";
+    $("status").className = "status" + (type ? " " + type : "");
+  }
+
+  async function init(){
+    const cfgRes = await fetch(AUTH_WORKER + "/auth-config", {cache:"no-store"});
+    const cfg = await cfgRes.json();
+    if(!cfgRes.ok) throw new Error(cfg.message || "인증 설정 조회 실패");
+
+    state.sb = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseKey, {
+      auth:{
+        persistSession:true,
+        storage:sessionStorage,
+        autoRefreshToken:true,
+        detectSessionInUrl:true
+      }
+    });
+
+    const {data:{session}} = await state.sb.auth.getSession();
+    if(!session){
+      location.replace("/?next=%2Ftonest_info");
+      return;
+    }
+
+    state.session = session;
+    await load();
+  }
+
+  async function api(path, options={}){
+    const token = state.session?.access_token;
+    const headers = new Headers(options.headers || {});
+    if(token) headers.set("Authorization", "Bearer " + token);
+    if(options.body && !headers.has("Content-Type")) headers.set("Content-Type","application/json");
+
+    const res = await fetch(INFO_WORKER + path, {...options, headers});
+    const data = await res.json().catch(()=>({}));
+    if(!res.ok) throw new Error(data.message || "요청 실패");
+    return data;
+  }
+
+  async function load(){
+    status("조회 중...");
+    const data = await api("/api/info");
+    state.rows = Array.isArray(data.rows) ? data.rows : [];
+    state.role = data.role || "";
+    state.admin = ["super_admin","admin"].includes(state.role);
+
+    $("rolePill").textContent = roleLabel(state.role);
+    $("addBtn").hidden = !state.admin;
+    $("saveBtn").hidden = !state.admin;
+
+    render();
+    status(`총 ${state.rows.length}명`, "ok");
+  }
+
+  function input(row, field, type="text"){
+    const value = row[field] ?? "";
+    const disabled = !state.admin ? "disabled" : "";
+    if(type === "checkbox"){
+      return `<input data-field="${field}" type="checkbox" ${value===true?"checked":""} ${disabled}>`;
+    }
+    if(field === "wave"){
+      return `<select data-field="${field}" ${disabled}>
+        <option value=""></option>
+        <option value="주간" ${value==="주간"?"selected":""}>주간</option>
+        <option value="야간" ${value==="야간"?"selected":""}>야간</option>
+        <option value="주/야" ${value==="주/야"?"selected":""}>주/야</option>
+      </select>`;
+    }
+    return `<input data-field="${field}" type="${type}" value="${String(value).replaceAll('"','&quot;')}" ${disabled}>`;
+  }
+
+  function rowHtml(row, index){
+    return `<tr data-index="${index}" class="${row.is_resigned?"resigned":""}">
+      <td>${input(row,"person_name")}</td>
+      <td>${input(row,"contact_phone")}</td>
+      <td>${input(row,"position_title")}</td>
+      <td>${input(row,"coupang_id")}</td>
+      <td>${input(row,"camp_code")}</td>
+      <td>${input(row,"wave")}</td>
+      <td>${input(row,"vehicle_plate_number")}</td>
+      <td>${input(row,"transport_qualification_number")}</td>
+      <td>${input(row,"business_name")}</td>
+      <td>${input(row,"business_registration_number")}</td>
+      <td>${input(row,"payroll_bank_name")}</td>
+      <td>${input(row,"payroll_account_number")}</td>
+      <td>${input(row,"hire_date","date")}</td>
+      <td>${input(row,"resignation_scheduled_date","date")}</td>
+      <td>${input(row,"is_resigned","checkbox")}</td>
+      <td>${input(row,"employment_accident_insurance","checkbox")}</td>
+      <td>${input(row,"memo")}</td>
+      <td>${state.admin?`<button class="btn danger" data-delete="${index}" type="button">삭제</button>`:""}</td>
+    </tr>`;
+  }
+
+  function render(){
+    const q = ($("search").value || "").trim().toLowerCase();
+    const visible = state.rows
+      .map((r,i)=>({r,i}))
+      .filter(({r})=>{
+        if(!q) return true;
+        return [r.person_name,r.coupang_id,r.camp_code,r.position_title]
+          .some(v=>String(v||"").toLowerCase().includes(q));
+      });
+
+    $("body").innerHTML = visible.map(({r,i})=>rowHtml(r,i)).join("");
+    $("empty").hidden = visible.length > 0;
+
+    $("body").querySelectorAll("tr").forEach(tr=>{
+      const i = Number(tr.dataset.index);
+      tr.querySelectorAll("[data-field]").forEach(el=>{
+        el.addEventListener("change", ()=>{
+          const field = el.dataset.field;
+          state.rows[i][field] =
+            el.type === "checkbox" ? el.checked : el.value;
+          state.rows[i].__dirty = true;
+          tr.classList.toggle("resigned", !!state.rows[i].is_resigned);
+        });
+      });
+    });
+
+    $("body").querySelectorAll("[data-delete]").forEach(btn=>{
+      btn.addEventListener("click", async ()=>{
+        const i = Number(btn.dataset.delete);
+        const row = state.rows[i];
+
+        if(!confirm(`${row.person_name || "선택한 행"}을 삭제할까요?`)) return;
+
+        if(row.id){
+          await api("/api/info/" + row.id, {method:"DELETE"});
+        }
+
+        state.rows.splice(i,1);
+        render();
+        status("삭제 완료","ok");
+      });
+    });
+  }
+
+  $("search").addEventListener("input", render);
+  $("reloadBtn").addEventListener("click", load);
+
+  $("addBtn").addEventListener("click", ()=>{
+    state.rows.unshift({
+      person_name:"",
+      is_resigned:false,
+      employment_accident_insurance:null,
+      __new:true,
+      __dirty:true
+    });
+    render();
+  });
+
+  $("saveBtn").addEventListener("click", async ()=>{
+    try{
+      const dirty = state.rows.filter(r=>r.__dirty);
+      if(!dirty.length){
+        status("변경사항 없음");
+        return;
+      }
+
+      status(`저장 중... ${dirty.length}건`);
+
+      for(const row of dirty){
+        const payload = {};
+        if(row.id) payload.id = row.id;
+        for(const f of FIELDS) payload[f] = row[f] ?? null;
+
+        const result = await api("/api/info", {
+          method: row.id ? "PUT" : "POST",
+          body: JSON.stringify(payload)
+        });
+
+        Object.assign(row, result.row || {});
+        delete row.__dirty;
+        delete row.__new;
+      }
+
+      render();
+      status("저장 완료","ok");
+    }catch(e){
+      status(e.message || String(e),"err");
+    }
+  });
+
+  $("homeBtn").addEventListener("click", ()=>location.href="/home");
+  $("logoutBtn").addEventListener("click", async ()=>{
+    try{ await state.sb?.auth?.signOut(); }finally{ location.replace("/"); }
+  });
+
+  init().catch(e=>{
+    console.error(e);
+    status(e.message || String(e),"err");
+  });
+})();
+</script>
+</body>
+</html>
