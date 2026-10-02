@@ -1,0 +1,16 @@
+name = "login"
+main = "login-worker.js"
+compatibility_date = "2026-10-02"
+
+keep_vars = true
+
+routes = [
+  { pattern = "tonest-corp.com/*", zone_name = "tonest-corp.com" },
+  { pattern = "www.tonest-corp.com/*", zone_name = "tonest-corp.com" }
+]
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+run_worker_first = true
+html_handling = "none"
