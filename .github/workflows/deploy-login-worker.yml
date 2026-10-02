@@ -1,4 +1,4 @@
-name: Deploy TO:NEST Login Worker
+name: Deploy TO:NEST login worker
 
 on:
   push:
@@ -6,20 +6,16 @@ on:
       - main
     paths:
       - "login-worker.js"
-      - "wrangler.toml"
-      - "index.html"
-      - "signup"
-      - "board-menu.js"
-      - "logo.png"
-      - "favicon.ico"
-      - ".github/workflows/deploy-tonest-worker.yml"
+      - "login-wrangler.toml"
+      - "public/**"
+      - ".github/workflows/deploy-login-worker.yml"
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: deploy-tonest-worker-main
+  group: deploy-tonest-login-main
   cancel-in-progress: true
 
 jobs:
@@ -31,21 +27,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Prepare static assets
-        shell: bash
-        run: |
-          rm -rf public
-          mkdir -p public
-
-          cp index.html public/index.html
-          cp signup public/signup
-          cp board-menu.js public/board-menu.js
-          cp logo.png public/logo.png
-          cp favicon.ico public/favicon.ico
-
-      - name: Deploy to Cloudflare Workers
+      - name: Deploy login worker and static assets
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           wranglerVersion: "4"
-          command: deploy --config wrangler.toml --keep-vars
+          command: deploy --config login-wrangler.toml --keep-vars
