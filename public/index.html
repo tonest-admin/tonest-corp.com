@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
   <title>TO:NEST 로그인</title>
   <meta name="theme-color" content="#16a7a4">
-  <link rel="icon" href="/favicon.ico?v=3" type="image/x-icon">
-  <link rel="shortcut icon" href="/favicon.ico?v=3" type="image/x-icon">
+  <link rel="icon" href="/favicon.ico?v=5" type="image/x-icon">
+  <link rel="shortcut icon" href="/favicon.ico?v=5" type="image/x-icon">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
     :root{
@@ -96,6 +96,8 @@
 
     <section class="card">
       <div class="kicker">TO:NEST OPERATIONS</div>
+      <h1 class="title">로그인</h1>
+      <p class="subtitle">TO:NEST 운영 시스템에 접속합니다.</p>
 
       <label class="label" for="email">이메일</label>
       <input id="email" type="email" placeholder="name@company.com" autocomplete="username">
@@ -111,7 +113,7 @@
       </div>
 
       <button class="btn" id="signIn" type="button">로그인</button>
-      <a class="btn secondary" href="/signup?v=4">회원가입</a>
+      <a class="btn secondary" href="/signup">회원가입</a>
 
       <div class="status" id="status" aria-live="polite"></div>
       <div class="footer">THE POWER TO ATTRACT PEOPLE</div>
@@ -121,7 +123,7 @@
 
 <script>
 (() => {
-  const AUTH_WORKER_URL = "https://login.tonest-admin.workers.dev";
+  const AUTH_WORKER_URL = location.origin;
   const SAVED_EMAIL_KEY = "tonest_saved_login_email";
 
   const email = document.getElementById("email");
