@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="ko">
 <head>
 <meta charset="utf-8">
@@ -11,7 +11,7 @@
 *{box-sizing:border-box}html,body{margin:0;min-height:100%;font-family:var(--font);color:var(--text)}html{background:radial-gradient(circle at 50% 0%,rgba(30,174,168,.10),transparent 38%),linear-gradient(180deg,#fff 0%,var(--bg) 72%,#eef5f3 100%)}body{background:transparent;-webkit-font-smoothing:antialiased}
 .wrap{min-height:100dvh;display:flex;align-items:center;justify-content:center;padding:clamp(14px,2.6vw,30px)}.auth-stack{width:min(100%,440px);display:flex;flex-direction:column;gap:14px}
 .logo-panel{position:relative;width:100%;aspect-ratio:1/1;border:1px solid var(--line);border-radius:30px;background:#fff;display:flex;align-items:center;justify-content:center;overflow:hidden;box-shadow:var(--shadow2)}
-.logo-panel:before{content:"";position:absolute;inset:18px;border:1px solid var(--line2);border-radius:24px;background:linear-gradient(180deg,#fff,#fbfefd)}.brand-logo{position:relative;width:82%;height:82%;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.logo-panel:before{content:"";position:absolute;inset:18px;border:1px solid var(--line2);border-radius:24px;background:linear-gradient(180deg,#fff,#fbfefd)}.brand-logo-img{position:relative;z-index:1;width:82%;height:auto;max-height:72%;object-fit:contain;display:block}.brand-logo{position:relative;width:82%;height:82%;display:flex;flex-direction:column;align-items:center;justify-content:center}
 .symbol{position:relative;width:52%;aspect-ratio:1;margin-bottom:6%}.symbol .bowl{position:absolute;left:7%;bottom:5%;width:78%;height:58%;border-radius:0 0 50% 50%/0 0 74% 74%;background:linear-gradient(135deg,#69b468 6%,#15a8aa 72%);clip-path:polygon(0 0,34% 52%,66% 68%,100% 50%,86% 100%,38% 100%,11% 64%)}
 .symbol .leaf{position:absolute;right:14%;top:2%;width:38%;height:68%;border-radius:100% 0 100% 0;background:linear-gradient(150deg,#64b86a,#17a8aa 70%);transform:rotate(18deg);transform-origin:bottom left}.symbol .cut{position:absolute;right:8%;top:24%;width:42%;height:54%;background:#fff;border-radius:100% 0 100% 0;transform:rotate(20deg)}
 .wordmark{font-size:clamp(31px,6.8vw,54px);font-weight:800;letter-spacing:.30em;color:#999;margin-left:.30em;line-height:1}.tagline{margin-top:7%;font-size:clamp(10px,2.2vw,16px);font-weight:700;letter-spacing:.20em;color:#999}
@@ -28,12 +28,12 @@ input::placeholder{color:#9aa8aa;font-weight:600}input:focus{background:#fff;bor
 </head>
 <body>
 <div class="wrap"><main class="auth-stack">
-<section class="logo-panel" aria-label="TO:NEST"><div class="brand-logo"><div class="symbol"><div class="bowl"></div><div class="leaf"></div><div class="cut"></div></div><div class="wordmark">TO:NEST</div><div class="tagline">THE POWER TO ATTRACT PEOPLE</div></div></section>
-<section class="card"><div class="kicker">TO:NEST OPERATIONS</div><h1 class="title">로그인</h1><p class="subtitle">TO:NEST 운영 시스템에 접속합니다.</p>
-<label class="label" for="email">이메일</label><input id="email" type="email" placeholder="name@company.com" autocomplete="username">
-<label class="label" for="password">비밀번호</label><input id="password" type="password" placeholder="비밀번호 입력" autocomplete="current-password">
-<div class="remember-actions"><label class="remember-row"><input id="rememberEmail" type="checkbox"><span>아이디 저장</span></label><button class="text-btn" id="forgotPassword" type="button">비밀번호 찾기</button></div>
-<button class="btn" id="signIn" type="button">로그인</button><div class="status" id="status" aria-live="polite"></div><div class="footer">THE POWER TO ATTRACT PEOPLE</div></section>
+<section class="logo-panel" aria-label="TO:NEST"><img class="brand-logo-img" src="/tonest-logo.svg" alt="TO:NEST"></section>
+<section class="card"><div class="kicker">TO:NEST OPERATIONS</div><h1 class="title">濡쒓렇??/h1><p class="subtitle">TO:NEST ?댁쁺 ?쒖뒪?쒖뿉 ?묒냽?⑸땲??</p>
+<label class="label" for="email">?대찓??/label><input id="email" type="email" placeholder="name@company.com" autocomplete="username">
+<label class="label" for="password">鍮꾨?踰덊샇</label><input id="password" type="password" placeholder="鍮꾨?踰덊샇 ?낅젰" autocomplete="current-password">
+<div class="remember-actions"><label class="remember-row"><input id="rememberEmail" type="checkbox"><span>?꾩씠?????/span></label><button class="text-btn" id="forgotPassword" type="button">鍮꾨?踰덊샇 李얘린</button></div>
+<button class="btn" id="signIn" type="button">濡쒓렇??/button><div class="status" id="status" aria-live="polite"></div><div class="footer">THE POWER TO ATTRACT PEOPLE</div></section>
 </main></div>
 <script>
 (()=>{
@@ -48,21 +48,21 @@ try{const saved=localStorage.getItem(SAVED_EMAIL_KEY)||"";if(saved){email.value=
 const client=(SUPABASE_URL&&SUPABASE_ANON_KEY&&window.supabase?.createClient)?window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}}):null;
 async function signIn(){
  const em=(email.value||"").trim().toLowerCase(),pw=password.value||"";
- if(!em)return setStatus("이메일을 입력해주세요.","error");
- if(!pw)return setStatus("비밀번호를 입력해주세요.","error");
- if(!client)return setStatus("Supabase 로그인 키 연결 전입니다.","error");
- signInBtn.disabled=true;setStatus("로그인 중...");
+ if(!em)return setStatus("?대찓?쇱쓣 ?낅젰?댁＜?몄슂.","error");
+ if(!pw)return setStatus("鍮꾨?踰덊샇瑜??낅젰?댁＜?몄슂.","error");
+ if(!client)return setStatus("Supabase 濡쒓렇?????곌껐 ?꾩엯?덈떎.","error");
+ signInBtn.disabled=true;setStatus("濡쒓렇??以?..");
  try{
   const {error}=await client.auth.signInWithPassword({email:em,password:pw});if(error)throw error;
   try{if(rememberEmail.checked)localStorage.setItem(SAVED_EMAIL_KEY,em);else localStorage.removeItem(SAVED_EMAIL_KEY)}catch{}
-  setStatus("로그인 성공","success");location.replace(NEXT_PATH);
- }catch(err){setStatus("로그인 실패: "+(err?.message||String(err)),"error")}finally{signInBtn.disabled=false}
+  setStatus("濡쒓렇???깃났","success");location.replace(NEXT_PATH);
+ }catch(err){setStatus("濡쒓렇???ㅽ뙣: "+(err?.message||String(err)),"error")}finally{signInBtn.disabled=false}
 }
 async function resetPassword(){
  const em=(email.value||"").trim().toLowerCase();
- if(!em)return setStatus("이메일을 먼저 입력해주세요.","error");
- if(!client)return setStatus("Supabase 로그인 키 연결 전입니다.","error");
- try{setStatus("비밀번호 재설정 메일 발송 중...");const {error}=await client.auth.resetPasswordForEmail(em,{redirectTo:location.origin+"/"});if(error)throw error;setStatus("비밀번호 재설정 메일을 보냈습니다.","success")}catch(err){setStatus("메일 발송 실패: "+(err?.message||String(err)),"error")}
+ if(!em)return setStatus("?대찓?쇱쓣 癒쇱? ?낅젰?댁＜?몄슂.","error");
+ if(!client)return setStatus("Supabase 濡쒓렇?????곌껐 ?꾩엯?덈떎.","error");
+ try{setStatus("鍮꾨?踰덊샇 ?ъ꽕??硫붿씪 諛쒖넚 以?..");const {error}=await client.auth.resetPasswordForEmail(em,{redirectTo:location.origin+"/"});if(error)throw error;setStatus("鍮꾨?踰덊샇 ?ъ꽕??硫붿씪??蹂대깉?듬땲??","success")}catch(err){setStatus("硫붿씪 諛쒖넚 ?ㅽ뙣: "+(err?.message||String(err)),"error")}
 }
 signInBtn.addEventListener("click",signIn);forgotPassword.addEventListener("click",resetPassword);password.addEventListener("keydown",e=>{if(e.key==="Enter")signIn()});
 if(client)client.auth.getSession().then(({data})=>{if(data?.session)location.replace(NEXT_PATH)}).catch(()=>{});
@@ -70,3 +70,4 @@ if(client)client.auth.getSession().then(({data})=>{if(data?.session)location.rep
 </script>
 </body>
 </html>
+
