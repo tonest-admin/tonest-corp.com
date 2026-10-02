@@ -3,12 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+
   <title>Home | TO:NEST</title>
-  <link rel="icon" href="/favicon.ico?v=6" type="image/x-icon">
-  <link rel="shortcut icon" href="/favicon.ico?v=6" type="image/x-icon">
+
+  <link rel="icon" href="/favicon.ico?v=9" type="image/x-icon">
+  <link rel="shortcut icon" href="/favicon.ico?v=9" type="image/x-icon">
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="/board-menu.js?v=2" defer></script>
+  <script src="/board-menu.js?v=4" defer></script>
 
   <style>
     :root{
@@ -17,51 +19,48 @@
       --line:#dce7e5;
       --line2:#cbd8d6;
       --text:#172124;
-      --muted:#6c7d7f;
+      --muted:#596d6a;
       --primary:#16a7a4;
       --primary2:#118b89;
       --danger:#dc2626;
       --shadow:0 12px 32px rgba(15,45,47,.08);
-      --font:"Pretendard Variable","Pretendard","Noto Sans KR",system-ui,-apple-system,"Segoe UI",sans-serif
+      --font:"Pretendard Variable","Pretendard","Noto Sans KR",system-ui,-apple-system,"Segoe UI",sans-serif;
     }
 
     *{box-sizing:border-box}
 
-    html,
-    body{
+    html,body{
       margin:0;
       width:100%;
       min-height:100%;
       font-family:var(--font);
       color:var(--text);
-      background:var(--bg)
+      background:
+        radial-gradient(circle at 12% 0%,rgba(22,167,164,.07),transparent 30%),
+        linear-gradient(180deg,#fff 0%,var(--bg) 76%,#edf5f3 100%);
+      -webkit-font-smoothing:antialiased;
+      text-rendering:optimizeLegibility;
     }
 
     body{
       min-width:0;
       overflow-x:hidden;
-      -webkit-font-smoothing:antialiased
     }
 
-    button,
-    a{font:inherit}
+    button,a{font:inherit}
 
-    /*
-     * 화면 가로폭 전체 사용.
-     * 이전 min(1180px,100%) 제한 제거.
-     */
     .wrap{
       width:100%;
       max-width:none;
       margin:0;
-      padding:12px 18px 36px
+      padding:12px 18px 36px;
     }
 
     .card{
       background:#fff;
       border:1px solid var(--line);
       border-radius:18px;
-      box-shadow:var(--shadow)
+      box-shadow:var(--shadow);
     }
 
     .top{
@@ -73,7 +72,7 @@
       margin-bottom:12px;
       position:sticky;
       top:6px;
-      z-index:20
+      z-index:20;
     }
 
     .menuLogoBtn{
@@ -86,39 +85,40 @@
       border-radius:11px;
       display:grid;
       place-items:center;
-      cursor:pointer
+      cursor:pointer;
     }
 
-    /*
-     * 마루웰 Home과 동일하게 메뉴 로고는 favicon.ico 사용.
-     */
+    .menuLogoBtn:hover{
+      background:#eaf8f6;
+    }
+
     .logo{
       width:36px;
       height:36px;
       object-fit:contain;
-      display:block
+      display:block;
     }
 
     .brandBlock{
       display:flex;
       flex-direction:column;
       justify-content:center;
-      min-width:0
+      min-width:0;
     }
 
     .brand{
       font-size:20px;
-      font-weight:850;
+      font-weight:900;
       letter-spacing:-.03em;
-      line-height:1.05
+      line-height:1.05;
     }
 
     .sub{
       margin-top:3px;
       color:var(--muted);
       font-size:10.5px;
-      font-weight:700;
-      letter-spacing:.02em
+      font-weight:750;
+      letter-spacing:.02em;
     }
 
     .grow{flex:1}
@@ -132,10 +132,10 @@
       border:1px solid var(--line2);
       border-radius:999px;
       background:#fff;
-      color:#4d6062;
+      color:#425956;
       font-size:11px;
-      font-weight:750;
-      white-space:nowrap
+      font-weight:800;
+      white-space:nowrap;
     }
 
     .btn{
@@ -145,15 +145,13 @@
       border-radius:10px;
       background:#fff;
       color:#334345;
-      font-weight:750;
-      cursor:pointer
+      font-weight:800;
+      cursor:pointer;
     }
-
-    .btn:active{transform:translateY(1px)}
 
     .btn.danger{
       color:var(--danger);
-      border-color:#fecaca
+      border-color:#fecaca;
     }
 
     .hero{
@@ -164,40 +162,39 @@
         linear-gradient(
           135deg,
           #fff 0%,
-          #f1fbf9 100%
-        )
+          #f3fbfa 100%
+        );
     }
 
     .heroKicker{
       color:var(--primary2);
       font-size:11px;
-      font-weight:850;
-      letter-spacing:.15em
+      font-weight:900;
+      letter-spacing:.13em;
     }
 
     .hero h1{
-      margin:7px 0 5px;
+      margin:7px 0 7px;
       font-size:30px;
-      letter-spacing:-.045em
+      line-height:1.1;
+      font-weight:950;
+      letter-spacing:-.045em;
     }
 
     .hero p{
       margin:0;
       color:var(--muted);
       font-size:13px;
-      line-height:1.6
+      line-height:1.6;
+      font-weight:700;
     }
 
-    /*
-     * 화면 전체 폭을 기준으로 카드 배치.
-     * 데스크톱 4열, 중간 3/2열, 모바일 1열.
-     */
     .grid{
       width:100%;
       display:grid;
       grid-template-columns:
         repeat(4,minmax(0,1fr));
-      gap:12px
+      gap:12px;
     }
 
     .menuCard{
@@ -209,13 +206,13 @@
       transition:
         transform .15s,
         border-color .15s,
-        box-shadow .15s
+        box-shadow .15s;
     }
 
     .menuCard:hover{
       transform:translateY(-1px);
       border-color:#9fd8d4;
-      box-shadow:0 14px 34px rgba(15,45,47,.10)
+      box-shadow:0 14px 34px rgba(15,45,47,.10);
     }
 
     .menuIcon{
@@ -226,70 +223,126 @@
       color:var(--primary2);
       display:grid;
       place-items:center;
-      font-size:20px;
-      font-weight:900
+      font-size:18px;
+      font-weight:950;
+    }
+
+    .menuIcon.camp{
+      font-size:15px;
+      letter-spacing:-.04em;
+    }
+
+    .menuIcon.admin{
+      background:#fff9e8;
+      color:#a16207;
     }
 
     .menuTitle{
       margin-top:13px;
       font-size:17px;
-      font-weight:850
+      font-weight:900;
+      letter-spacing:-.025em;
     }
 
     .menuDesc{
       margin-top:5px;
       color:var(--muted);
       font-size:11.5px;
-      line-height:1.55
+      line-height:1.55;
+      font-weight:700;
+    }
+
+    .menuMeta{
+      margin-top:12px;
+      display:flex;
+      gap:6px;
+      flex-wrap:wrap;
+    }
+
+    .badge{
+      display:inline-flex;
+      align-items:center;
+      min-height:22px;
+      padding:0 8px;
+      border:1px solid #d9e6e4;
+      border-radius:999px;
+      background:#f8fbfa;
+      color:#536966;
+      font-size:9px;
+      font-weight:850;
+    }
+
+    .badge.api{
+      border-color:#bfe4e0;
+      background:#eaf8f6;
+      color:#118b89;
+    }
+
+    .badge.admin{
+      border-color:#fde68a;
+      background:#fff9e8;
+      color:#a16207;
     }
 
     .status{
-      margin-top:12px;
       min-height:18px;
-      color:var(--muted);
-      font-size:11px
+      margin-top:13px;
+      padding:0 3px;
+      color:#657875;
+      font-size:11px;
+      font-weight:700;
     }
 
-    .status.err{color:var(--danger)}
+    .status.err{
+      color:#dc2626;
+    }
 
-    @media(max-width:1200px){
+    [hidden]{
+      display:none !important;
+    }
+
+    @media(max-width:1180px){
       .grid{
         grid-template-columns:
-          repeat(3,minmax(0,1fr))
+          repeat(3,minmax(0,1fr));
       }
     }
 
-    @media(max-width:900px){
-      .grid{
-        grid-template-columns:
-          repeat(2,minmax(0,1fr))
-      }
-    }
-
-    @media(max-width:640px){
+    @media(max-width:850px){
       .wrap{
-        padding:7px 7px 24px
+        padding:8px 10px 30px;
       }
 
       .top{
-        top:4px;
-        padding:8px 10px
+        flex-wrap:wrap;
       }
 
-      .pill{display:none}
-
-      .brand{font-size:18px}
-
-      .hero{
-        padding:18px 16px
+      .grow{
+        display:none;
       }
 
-      .hero h1{
-        font-size:26px
+      .pill{
+        order:3;
+        width:100%;
       }
 
       .grid{
-        grid-template-columns:1fr
+        grid-template-columns:
+          repeat(2,minmax(0,1fr));
+      }
+    }
+
+    @media(max-width:560px){
+      .grid{
+        grid-template-columns:1fr;
+      }
+
+      .hero{
+        padding:20px 18px;
+      }
+
+      .hero h1{
+        font-size:25px;
       }
     }
   </style>
@@ -308,7 +361,7 @@
     >
       <img
         class="logo"
-        src="/favicon.ico?v=6"
+        src="/favicon.ico?v=9"
         alt="TO:NEST"
       >
     </button>
@@ -369,6 +422,49 @@
       </div>
     </a>
 
+
+    <a
+      class="card menuCard"
+      href="/coupang_camp"
+    >
+      <div class="menuIcon camp">CP</div>
+
+      <div class="menuTitle">
+        쿠팡 캠프 조회
+      </div>
+
+      <div class="menuDesc">
+        MAROOWELL 공용 API의 캠프 · 본캠프 · 수신 SH · 채번 링크를 조회하고 관리합니다.
+      </div>
+
+      <div class="menuMeta">
+        <span class="badge api">MAROOWELL API</span>
+        <span class="badge">공용 데이터</span>
+      </div>
+    </a>
+
+
+    <a
+      id="adminAccessCard"
+      class="card menuCard"
+      href="/admin_access"
+      hidden
+    >
+      <div class="menuIcon admin">A</div>
+
+      <div class="menuTitle">
+        계정 · 권한 관리
+      </div>
+
+      <div class="menuDesc">
+        가입 승인 · 역할 변경 · 이메일 강제 인증을 관리합니다.
+      </div>
+
+      <div class="menuMeta">
+        <span class="badge admin">최고관리자</span>
+      </div>
+    </a>
+
   </section>
 
 
@@ -382,19 +478,33 @@
 
 <script>
 (() => {
-  const AUTH_BASE = location.origin;
+  const AUTH_BASE =
+    location.origin;
 
   const statusEl =
-    document.getElementById("status");
+    document.getElementById(
+      "status"
+    );
 
   const userPill =
-    document.getElementById("userPill");
+    document.getElementById(
+      "userPill"
+    );
 
   const welcomeTitle =
-    document.getElementById("welcomeTitle");
+    document.getElementById(
+      "welcomeTitle"
+    );
 
   const logoutBtn =
-    document.getElementById("logoutBtn");
+    document.getElementById(
+      "logoutBtn"
+    );
+
+  const adminAccessCard =
+    document.getElementById(
+      "adminAccessCard"
+    );
 
   let client = null;
 
@@ -517,16 +627,23 @@
         profile.display_name ||
         profile.email ||
         "사용자"
-      } · ${
-        roleLabel(profile.role)
-      }`;
+      } · ${roleLabel(profile.role)}`;
 
 
     welcomeTitle.textContent =
       `${
         profile.display_name ||
         "사용자"
-      }님, 안녕하세요.`;
+      }님 안녕하세요.`;
+
+
+    adminAccessCard.hidden =
+      profile.role !== "super_admin";
+
+
+    status(
+      "TO:NEST 운영 시스템에 연결되었습니다."
+    );
   }
 
 
@@ -551,9 +668,7 @@
       true
     );
   });
-
 })();
 </script>
-
 </body>
 </html>
