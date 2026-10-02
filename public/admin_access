@@ -20,7 +20,7 @@
       --line:#d9e6e4;
       --line2:#edf3f2;
       --text:#172124;
-      --muted:#6b7c7e;
+      --muted:#536765;
 
       --primary:#16a7a4;
       --primary2:#118b89;
@@ -118,7 +118,7 @@
     }
 
     .brandTitle{
-      font-size:19px;
+      font-size:20px;
       line-height:1.1;
       font-weight:850;
       letter-spacing:-.04em;
@@ -127,8 +127,8 @@
     .brandSub{
       margin-top:4px;
       color:var(--muted);
-      font-size:10.5px;
-      font-weight:650;
+      font-size:11.5px;
+      font-weight:700;
     }
 
     .spacer{
@@ -251,9 +251,9 @@
       max-width:780px;
       margin:0;
       color:#607271;
-      font-size:12px;
+      font-size:13px;
       line-height:1.7;
-      font-weight:600;
+      font-weight:700;
     }
 
     .heroNotice{
@@ -264,16 +264,16 @@
     }
 
     .noticeTitle{
-      font-size:13px;
+      font-size:14px;
       font-weight:850;
     }
 
     .noticeBody{
       margin-top:6px;
-      color:#657674;
-      font-size:11px;
+      color:#4d615f;
+      font-size:12px;
       line-height:1.6;
-      font-weight:600;
+      font-weight:700;
     }
 
     .noticeBadge{
@@ -318,14 +318,14 @@
     }
 
     .statLabel{
-      color:#687b79;
-      font-size:10px;
-      font-weight:750;
+      color:#536765;
+      font-size:11px;
+      font-weight:800;
     }
 
     .statValue{
       margin-top:8px;
-      font-size:26px;
+      font-size:28px;
       line-height:1;
       font-weight:900;
       letter-spacing:-.04em;
@@ -359,8 +359,8 @@
       outline:none;
       color:#263b39;
       background:#fbfefd;
-      font-size:11.5px;
-      font-weight:650;
+      font-size:12.5px;
+      font-weight:700;
     }
 
     .searchInput:focus,
@@ -378,8 +378,8 @@
       outline:none;
       color:#334745;
       background:#fff;
-      font-size:11px;
-      font-weight:700;
+      font-size:12px;
+      font-weight:750;
     }
 
     .statusLine{
@@ -393,9 +393,9 @@
     }
 
     .statusText{
-      color:#657674;
-      font-size:10.5px;
-      font-weight:650;
+      color:#4d615f;
+      font-size:11.5px;
+      font-weight:700;
     }
 
     .statusText.ok{color:var(--green)}
@@ -403,9 +403,9 @@
     .statusText.warn{color:var(--amber)}
 
     .resultCount{
-      color:#82918f;
-      font-size:10px;
-      font-weight:700;
+      color:#667977;
+      font-size:11px;
+      font-weight:800;
       white-space:nowrap;
     }
 
@@ -417,7 +417,7 @@
 
     .userCard{
       display:grid;
-      grid-template-columns:minmax(280px,.92fr) minmax(400px,1.35fr) minmax(310px,.85fr);
+      grid-template-columns:minmax(260px,.82fr) minmax(440px,1.4fr) minmax(320px,.88fr);
       gap:14px;
       align-items:center;
       padding:14px;
@@ -441,37 +441,23 @@
 
     .userIdentity{
       min-width:0;
-      display:flex;
-      align-items:flex-start;
-      gap:11px;
-    }
-
-    .avatar{
-      width:46px;
-      height:46px;
-      flex:0 0 46px;
-      display:grid;
-      place-items:center;
-      border-radius:14px;
-      background:
-        linear-gradient(145deg,#ddf5f2,#f8fffe);
-      border:1px solid #cde8e5;
-      color:var(--primary2);
-      font-size:17px;
-      font-weight:900;
+      display:block;
+      padding:2px 2px;
     }
 
     .userName{
-      font-size:14px;
-      font-weight:850;
+      font-size:16px;
+      font-weight:900;
       line-height:1.3;
+      letter-spacing:-.02em;
+      color:#14201f;
     }
 
     .userEmail{
       margin-top:3px;
-      color:#6a7b79;
-      font-size:10.5px;
-      font-weight:650;
+      color:#4f6260;
+      font-size:11.5px;
+      font-weight:700;
       word-break:break-all;
     }
 
@@ -492,8 +478,8 @@
       border-radius:999px;
       background:#f8fbfa;
       color:#647674;
-      font-size:9px;
-      font-weight:800;
+      font-size:10px;
+      font-weight:850;
     }
 
     .badge.primary{
@@ -534,25 +520,25 @@
 
     .metaBox{
       min-width:0;
-      min-height:56px;
-      padding:9px 10px;
-      border:1px solid var(--line2);
+      min-height:60px;
+      padding:10px 11px;
+      border:1px solid #dfe9e7;
       border-radius:11px;
       background:#fbfefd;
     }
 
     .metaLabel{
-      color:#879694;
-      font-size:8.5px;
-      font-weight:750;
+      color:#6a7d7a;
+      font-size:9.5px;
+      font-weight:800;
     }
 
     .metaValue{
       margin-top:5px;
-      color:#3e5451;
-      font-size:10px;
-      line-height:1.35;
-      font-weight:700;
+      color:#293f3c;
+      font-size:11.5px;
+      line-height:1.4;
+      font-weight:750;
       overflow:hidden;
       text-overflow:ellipsis;
       white-space:nowrap;
@@ -574,8 +560,8 @@
       color:#334745;
       outline:none;
       padding:0 8px;
-      font-size:10px;
-      font-weight:750;
+      font-size:11px;
+      font-weight:800;
     }
 
     .editorActions{
@@ -649,8 +635,8 @@
       border-radius:12px;
       background:#f8fbfa;
       color:#506462;
-      font-size:11px;
-      font-weight:700;
+      font-size:12px;
+      font-weight:750;
       word-break:break-all;
     }
 
@@ -1103,18 +1089,7 @@
     }
   }
 
-  function initials(row){
-    const name =
-      String(
-        row.display_name ||
-        row.email ||
-        "T"
-      ).trim();
 
-    return (
-      name.slice(0,2) || "TN"
-    ).toUpperCase();
-  }
 
   async function initSupabase(){
     const response =
@@ -1383,11 +1358,6 @@
       >
 
         <div class="userIdentity">
-          <div class="avatar">
-            ${esc(initials(row))}
-          </div>
-
-          <div style="min-width:0">
             <div class="userName">
               ${esc(row.display_name || "이름 없음")}
             </div>
@@ -1439,7 +1409,6 @@
                   : ""
               }
             </div>
-          </div>
         </div>
 
         <div class="metaGrid">
