@@ -7,8 +7,8 @@
 
   <title>쿠팡 캠프 조회 | TO:NEST</title>
 
-  <link rel="icon" type="image/x-icon" href="/favicon.ico?v=9">
-  <link rel="shortcut icon" type="image/x-icon" href="/favicon.ico?v=9">
+  <link rel="icon" type="image/x-icon" href="/favicon.ico?v=10">
+  <link rel="shortcut icon" type="image/x-icon" href="/favicon.ico?v=10">
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
@@ -18,10 +18,10 @@
     :root{
       --bg:#f3f8f7;
       --card:#fff;
-      --line:#d9e6e4;
-      --line2:#cbd8d6;
-      --text:#172124;
-      --muted:#566b69;
+      --line:#cfdcda;
+      --line2:#bccbc8;
+      --text:#111b1d;
+      --muted:#405452;
       --primary:#16a7a4;
       --primary2:#118b89;
       --primary-soft:#eaf8f6;
@@ -34,7 +34,7 @@
       --blue:#2563eb;
       --blue-soft:#eff6ff;
       --shadow:0 12px 32px rgba(15,45,47,.075);
-      --font:"Pretendard Variable","Pretendard","Noto Sans KR",system-ui,-apple-system,"Segoe UI",sans-serif;
+      --font:"Pretendard Variable","Pretendard","Segoe UI","Noto Sans KR",system-ui,-apple-system,sans-serif;
     }
 
     *{box-sizing:border-box}
@@ -48,8 +48,8 @@
       background:
         radial-gradient(circle at 10% 0%,rgba(22,167,164,.06),transparent 28%),
         linear-gradient(180deg,#fff 0%,var(--bg) 70%,#edf5f3 100%);
-      -webkit-font-smoothing:antialiased;
-      text-rendering:optimizeLegibility;
+      -webkit-font-smoothing:auto;
+      text-rendering:auto;
     }
 
     body{
@@ -61,6 +61,18 @@
     }
 
     button{cursor:pointer}
+
+    input,select,textarea,button{
+      opacity:1;
+      -webkit-font-smoothing:auto;
+      text-rendering:auto;
+    }
+
+    input::placeholder{
+      color:#6a7d7a;
+      opacity:1;
+      font-weight:700;
+    }
 
     .app{
       width:100%;
@@ -112,22 +124,29 @@
     .titleBox{
       min-width:0;
       display:flex;
+      align-items:center;
+      gap:9px;
+    }
+
+    .titleText{
+      min-width:0;
+      display:flex;
       flex-direction:column;
       gap:2px;
     }
 
     .title{
-      font-size:20px;
+      font-size:21px;
       line-height:1.05;
-      font-weight:900;
+      font-weight:950;
       letter-spacing:-.035em;
     }
 
     .subtitle{
       color:var(--muted);
-      font-size:11px;
+      font-size:12px;
       line-height:1.35;
-      font-weight:700;
+      font-weight:800;
     }
 
     .spacer{flex:1}
@@ -141,8 +160,8 @@
       border-radius:999px;
       background:#f8fbfa;
       color:#425957;
-      font-size:11px;
-      font-weight:800;
+      font-size:12px;
+      font-weight:850;
       white-space:nowrap;
     }
 
@@ -156,8 +175,8 @@
       border-radius:11px;
       background:#fff;
       color:#304542;
-      font-size:11.5px;
-      font-weight:850;
+      font-size:12.5px;
+      font-weight:900;
       white-space:nowrap;
     }
 
@@ -214,8 +233,8 @@
       border-radius:999px;
       background:#fff;
       color:#405552;
-      font-size:11px;
-      font-weight:800;
+      font-size:12px;
+      font-weight:850;
     }
 
     .toggle input{
@@ -227,8 +246,8 @@
 
     .helper{
       color:var(--muted);
-      font-size:10.5px;
-      font-weight:700;
+      font-size:11.5px;
+      font-weight:800;
     }
 
     .sheetWrap{
@@ -267,11 +286,12 @@
       z-index:5;
       height:42px;
       padding:7px 6px;
-      background:#e7f3f1;
-      color:#24413e;
+      background:#e2efed;
+      color:#162b29;
       text-align:center;
-      font-size:11.5px;
-      font-weight:900;
+      font-size:12.5px;
+      font-weight:950;
+      letter-spacing:-.01em;
       white-space:nowrap;
     }
 
@@ -279,7 +299,7 @@
       top:42px;
       z-index:4;
       height:43px;
-      background:#f5faf9;
+      background:#f2f7f6;
       padding:5px;
     }
 
@@ -316,9 +336,9 @@
       outline:0;
       background:transparent;
       padding:8px 7px;
-      color:#1d3330;
-      font-size:12px;
-      font-weight:700;
+      color:#101d1b;
+      font-size:13px;
+      font-weight:800;
     }
 
     .cellTextarea{
@@ -336,7 +356,7 @@
     .cellSelect:disabled,
     .cellTextarea:disabled{
       opacity:1;
-      color:#435956;
+      color:#1f3330;
       cursor:default;
     }
 
@@ -350,8 +370,8 @@
       padding:0 8px;
       outline:0;
       color:#2e4542;
-      font-size:10.5px;
-      font-weight:700;
+      font-size:11.5px;
+      font-weight:800;
     }
 
     .filterInput:focus,
@@ -376,9 +396,9 @@
       min-height:14px;
       padding:0 7px 4px;
       overflow:hidden;
-      color:#6a7d7a;
-      font-size:9px;
-      font-weight:750;
+      color:#4b5f5d;
+      font-size:10px;
+      font-weight:800;
       white-space:nowrap;
       text-overflow:ellipsis;
     }
@@ -398,7 +418,7 @@
       border-left:1px solid #d9e4e2;
       background:#f8fbfa;
       color:var(--primary2);
-      font-size:10px;
+      font-size:11px;
       font-weight:900;
     }
 
@@ -418,7 +438,7 @@
       border-left:1px solid #d9e4e2;
       background:#f8fbfa;
       color:var(--primary2);
-      font-size:10px;
+      font-size:11px;
       font-weight:900;
     }
 
@@ -434,8 +454,8 @@
       border-radius:9px;
       background:#fff5f5;
       color:#dc2626;
-      font-size:10px;
-      font-weight:850;
+      font-size:11px;
+      font-weight:900;
     }
 
     .statusbar{
@@ -455,8 +475,8 @@
       border-radius:999px;
       background:#f8fbfa;
       color:#506663;
-      font-size:10px;
-      font-weight:850;
+      font-size:11px;
+      font-weight:900;
       white-space:nowrap;
     }
 
@@ -475,9 +495,9 @@
     .statusText{
       min-width:0;
       overflow:hidden;
-      color:#556966;
-      font-size:10.5px;
-      font-weight:750;
+      color:#334946;
+      font-size:11.5px;
+      font-weight:800;
       white-space:nowrap;
       text-overflow:ellipsis;
     }
@@ -489,10 +509,10 @@
     .empty td{
       height:180px;
       background:#fff !important;
-      color:#657976;
+      color:#435754;
       text-align:center;
-      font-size:12px;
-      font-weight:700;
+      font-size:13px;
+      font-weight:800;
     }
 
     .modal{
@@ -588,14 +608,25 @@
       type="button"
       aria-label="TO:NEST 메뉴 열기"
     >
-      <img src="/favicon.ico?v=9" alt="TO:NEST">
+      <img src="/favicon.ico?v=10" alt="TO:NEST">
     </button>
 
     <div class="titleBox">
-      <div class="title">쿠팡 캠프 조회</div>
-      <div class="subtitle">
-        MAROOWELL 공용 캠프 API · 본캠프 · 수신 서브허브 · 채번 링크 관리
+      <div class="titleText">
+        <div class="title">쿠팡 캠프 조회</div>
+        <div class="subtitle">
+          MAROOWELL 공용 캠프 API · 본캠프 · 수신 서브허브 · 채번 링크 관리
+        </div>
       </div>
+
+      <a
+        id="btnMap"
+        class="btn blue"
+        href="/coupang_camp_map"
+        style="text-decoration:none"
+      >
+        지도
+      </a>
     </div>
 
     <div class="spacer"></div>
