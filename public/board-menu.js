@@ -4,12 +4,13 @@
   if (window.__TONEST_BOARD_MENU_INIT__) return;
   window.__TONEST_BOARD_MENU_INIT__ = true;
 
-  const BUILD = "20261006-route-map-v5";
+  const BUILD = "20261006-route-info-v1";
 
   const PAGES = [
     { key:"home", label:"Home", path:"/home", desc:"투네스트 운영 홈" },
     { key:"info", label:"TO:NEST 정보", path:"/tonest_info", desc:"인사 · 운영 기본정보" },
     { key:"coupang_camp", label:"쿠팡 캠프 조회", path:"/coupang_camp", desc:"공용 캠프 · 본캠프 · 수신 SH · 채번 링크 관리" },
+    { key:"route_info", label:"라우트 정보", path:"/route_info", desc:"TO:NEST 라우트 · 단가 · 서서브 정보 · 지도 연결 관리" },
     { key:"coupang_route_map", label:"쿠팡 라우트 지도", path:"/coupang_route_map", desc:"공용 라우트 · 폴리곤 · 입차지 조회 및 통합 수정" },
     { key:"admin_access", label:"계정 · 권한 관리", path:"/admin_access", desc:"가입 승인 · 역할 · 메일 인증 관리", restricted:true }
   ];
@@ -23,7 +24,7 @@
       .replaceAll("'","&#39;");
 
   const norm = path => {
-    let value = String(path || "/").replace(/[?#].*$/,"");
+    let value = String(path || "/").replace(/[?#].*$/g,"");
     if (!value.startsWith("/")) value = "/" + value;
     if (value.length > 1 && value.endsWith("/")) value = value.slice(0,-1);
     return value;
@@ -115,7 +116,7 @@
     panel.innerHTML = `
       <div class="tn-menu-head">
         <div class="tn-menu-brand">
-          <img src="/favicon.ico?v=10" alt="TO:NEST">
+          <img src="/favicon.ico?v=15" alt="TO:NEST">
         </div>
 
         <div class="tn-menu-title">
