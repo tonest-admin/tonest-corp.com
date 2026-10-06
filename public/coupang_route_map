@@ -698,10 +698,12 @@ async function syncRouteInfoAfterMap(row,camp,code){
           overrides:{
             delivery_location_name:text(dom.deliveryName.value)||null,
             delivery_location_address:text(dom.deliveryAddress.value)||null,
-            vendor_name_2w:text(dom.vendorDayName.value)||null,
+            wave:"야간",
+            maroowell_subsubroute_id:row?.id??null,
             vendor_name_1w:text(dom.vendorNightName.value)||null,
-            vendor_business_number_2w:text(dom.vendorDayBn.value)||null,
-            vendor_business_number_1w:text(dom.vendorNightBn.value)||null
+            vendor_business_number_1w:text(dom.vendorNightBn.value)||null,
+            vendor_name_2w:null,
+            vendor_business_number_2w:null
           }
         })
       }
