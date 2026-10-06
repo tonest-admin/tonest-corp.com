@@ -7,8 +7,8 @@
 <meta name="referrer" content="origin">
 <title>쿠팡 라우트 지도 | TO:NEST</title>
 
-<link rel="icon" href="/favicon.ico?v=12" type="image/x-icon">
-<link rel="shortcut icon" href="/favicon.ico?v=12" type="image/x-icon">
+<link rel="icon" href="/favicon.ico?v=13" type="image/x-icon">
+<link rel="shortcut icon" href="/favicon.ico?v=13" type="image/x-icon">
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=add4ce93b38c0ff9d9b9053728e067b3&autoload=false&libraries=services"></script>
@@ -79,7 +79,10 @@ button{cursor:pointer}
 .empty{padding:22px 12px;color:#596d69;font-size:11px;font-weight:800;text-align:center}
 
 .mapPane{position:relative;min-width:0;min-height:0;background:#e9f1ef}
-#map{position:absolute;inset:0}
+.mapWrap{position:absolute;inset:0;display:flex;min-width:0;min-height:0;background:#e9f1ef}
+#map,#roadview{flex:1 1 0;width:100%;height:100%;min-width:0;min-height:0}
+#roadview{display:none;background:#e5e7eb}
+.mapWrap.roadview-open #roadview{display:block}
 .mapTools{position:absolute;top:10px;right:10px;z-index:20;display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;max-width:calc(100% - 70px)}
 .mapTools .btn,.sideToggle{box-shadow:0 7px 20px rgba(15,45,47,.13)}
 .sideToggle{position:absolute;top:10px;left:10px;z-index:22;width:38px;min-width:38px;padding:0}
@@ -114,9 +117,9 @@ button{cursor:pointer}
 .btn.register{border-color:#99e5d4;background:#ebfaf6;color:#047857}
 .btn.warn{border-color:#fde68a;background:#fffbeb;color:#9a5c00}
 .routeSwatch{width:11px;height:11px;flex:0 0 11px;border-radius:3px;border:1px solid rgba(15,23,42,.18)}
-.routeLabel{min-width:0!important;display:flex;align-items:center;gap:5px;padding:4px 8px!important;border-radius:999px!important;border:1px solid rgba(15,23,42,.20)!important;background:rgba(255,255,255,.97)!important;color:#111827!important;box-shadow:0 3px 10px rgba(15,23,42,.20)!important;font-size:10px!important;font-weight:950!important;white-space:nowrap!important}
-.routeLabelDot{width:7px;height:7px;flex:0 0 7px;border-radius:999px;box-shadow:0 0 0 1px rgba(15,23,42,.10)}
-.routeLabelVendor{padding-left:5px;border-left:1px solid #d7dfdd;color:#536663;font-size:8.5px;font-weight:800}
+.routeLabel{min-width:0!important;display:flex;align-items:center;gap:5px;padding:4px 8px!important;border-radius:11px!important;border:1px solid rgba(255,255,255,.14)!important;background:rgba(0,0,0,.52)!important;color:#fff!important;box-shadow:0 2px 8px rgba(0,0,0,.18)!important;backdrop-filter:blur(1.5px)!important;-webkit-backdrop-filter:blur(1.5px)!important;font-size:10px!important;font-weight:650!important;white-space:nowrap!important}
+.routeLabelDot{width:7px;height:7px;flex:0 0 7px;border-radius:999px;box-shadow:0 0 0 2px rgba(255,255,255,.12)}
+.routeLabelVendor{padding-left:5px;border-left:1px solid rgba(255,255,255,.16);color:rgba(255,255,255,.86);font-size:9px;font-weight:500}
 .buttonGrid{display:none!important}
 .editor{padding:11px}
 @media(max-width:920px){.workspace{display:block}.actionGrid{grid-template-columns:repeat(3,minmax(0,1fr))}}
@@ -129,7 +132,7 @@ button{cursor:pointer}
 
 <header class="topbar">
   <button id="tnBoardMenuToggle" class="menuBtn" type="button" aria-label="TO:NEST 메뉴 열기">
-    <img src="/favicon.ico?v=12" alt="TO:NEST">
+    <img src="/favicon.ico?v=13" alt="TO:NEST">
   </button>
 
   <div class="titleBlock">
@@ -235,12 +238,16 @@ button{cursor:pointer}
 </aside>
 
 <section class="mapPane">
-  <div id="map"></div>
+  <div id="mapWrap" class="mapWrap">
+    <div id="map"></div>
+    <div id="roadview"></div>
+  </div>
   <button id="sideToggle" class="btn sideToggle" type="button" title="목록 접기">◀</button>
 
   <div class="mapTools">
     <button id="fitBtn" class="btn" type="button">전체 보기</button>
     <button id="mapTypeBtn" class="btn" type="button">위성</button>
+    <button id="roadviewBtn" class="btn" type="button" title="로드뷰 가능 도로 표시 후 지도 클릭">로드뷰</button>
   </div>
 
   <div id="hint" class="hint"></div>
@@ -274,12 +281,12 @@ const dom = {
   editPolygonBtn:$("#editPolygonBtn"), saveBtn:$("#saveBtn"),
   deleteBtn:$("#deleteBtn"), cancelEditBtn:$("#cancelEditBtn"),
   sideToggle:$("#sideToggle"), fitBtn:$("#fitBtn"), labelBtn:$("#labelBtn"),
-  mapTypeBtn:$("#mapTypeBtn"), hint:$("#hint"), footer:$("#footer"), status:$("#status")
+  mapTypeBtn:$("#mapTypeBtn"), roadviewBtn:$("#roadviewBtn"), hint:$("#hint"), footer:$("#footer"), status:$("#status")
 };
 
 const state = {
   sb:null, session:null, profile:null, canEdit:false,
-  map:null, isRoadmap:true, labelOn:true, vendorLabelOn:false,
+  map:null, roadview:null, roadviewClient:null, roadviewOn:false, isRoadmap:true, labelOn:true, vendorLabelOn:false,
   rows:[], selectedId:null, selectedOriginal:null, overlays:new Map(),
   drawing:null, drawPoints:[], drawMarkers:[], drawLine:null,
   editing:false, editMarkers:[]
@@ -1108,6 +1115,51 @@ function toggleSidebar(){
   },200);
 }
 
+function setRoadviewAt(latlng){
+  if(!state.roadviewOn||!latlng)return;
+
+  state.roadviewClient.getNearestPanoId(latlng,200,panoId=>{
+    if(!panoId){
+      status("근처 로드뷰가 없습니다.",true);
+      return;
+    }
+
+    document.getElementById("mapWrap")?.classList.add("roadview-open");
+    state.roadview.setPanoId(panoId,latlng);
+    showHint("");
+
+    setTimeout(()=>{
+      try{
+        state.map.relayout();
+        state.roadview.relayout?.();
+      }catch{}
+    },80);
+
+    status("로드뷰 표시");
+  });
+}
+
+function setRoadviewOn(on){
+  state.roadviewOn=Boolean(on);
+  dom.roadviewBtn.textContent=state.roadviewOn?"로드뷰 종료":"로드뷰";
+
+  const wrap=document.getElementById("mapWrap");
+
+  if(!state.roadviewOn){
+    wrap?.classList.remove("roadview-open");
+    try{state.map.removeOverlayMapTypeId(kakao.maps.MapTypeId.ROADVIEW);}catch{}
+    showHint("");
+    setTimeout(()=>{try{state.map.relayout();}catch{}},80);
+    status("로드뷰 종료");
+    return;
+  }
+
+  try{state.map.addOverlayMapTypeId(kakao.maps.MapTypeId.ROADVIEW);}catch{}
+  wrap?.classList.remove("roadview-open");
+  showHint("로드뷰: 파란 도로 위에서 원하는 위치를 클릭하세요.");
+  status("로드뷰 위치 선택 모드");
+}
+
 function bindEvents(){
   const run=()=>loadRoutes().catch(e=>status(e?.message||String(e),true));
 
@@ -1137,6 +1189,10 @@ function bindEvents(){
     dom.mapTypeBtn.textContent=state.isRoadmap?"위성":"일반지도";
   });
 
+  dom.roadviewBtn.addEventListener("click",()=>{
+    setRoadviewOn(!state.roadviewOn);
+  });
+
   dom.drawNewBtn.addEventListener("click",async()=>{try{if(await ensureSelectedForDraw())beginDraw("new");}catch(e){status(e?.message||String(e),true);}});
   dom.drawAddBtn.addEventListener("click",async()=>{try{if(await ensureSelectedForDraw())beginDraw("add");}catch(e){status(e?.message||String(e),true);}});
   dom.editPolygonBtn.addEventListener("click",enterEditMode);
@@ -1158,7 +1214,13 @@ function bindEvents(){
   dom.codeInput.addEventListener("keydown",inputEnter);
 
   kakao.maps.event.addListener(state.map,"click",e=>{
-    if(state.drawing&&e?.latLng)addDrawPoint(e.latLng);
+    if(state.drawing&&e?.latLng){
+      addDrawPoint(e.latLng);
+      return;
+    }
+    if(state.roadviewOn&&e?.latLng){
+      setRoadviewAt(e.latLng);
+    }
   });
 
   kakao.maps.event.addListener(state.map,"rightclick",()=>{
@@ -1188,6 +1250,14 @@ async function init(){
   state.map=new kakao.maps.Map($("#map"),{
     center:new kakao.maps.LatLng(36.45,127.85),
     level:13
+  });
+
+  state.roadview=new kakao.maps.Roadview($("#roadview"));
+  state.roadviewClient=new kakao.maps.RoadviewClient();
+
+  kakao.maps.event.addListener(state.roadview,"position_changed",()=>{
+    const pos=state.roadview.getPosition?.();
+    if(pos)state.map.setCenter(pos);
   });
 
   bindEvents();
