@@ -244,7 +244,7 @@ button{cursor:pointer}
 
   <div class="titleBlock">
     <div class="title">쿠팡 라우트 지도</div>
-    <div class="subtitle">MAROOWELL 통합 라우트 · 폴리곤 · 입차지 동기화</div>
+    <div class="subtitle">MAROOWELL 통합 라우트 · 폴리곤 · 입차지 · 벤더 관리</div>
   </div>
 
   <div class="grow"></div>
@@ -296,7 +296,7 @@ button{cursor:pointer}
         <button id="cancelEditBtn" class="btn" type="button">편집 종료</button>
       </div>
 
-      <div class="actionHint">조회는 저장과 분리됩니다. 신규는 캠프/라우트 입력 → 신규 등록 → 폴리곤 그리기 → 저장 순서입니다.</div>
+      <div class="actionHint">라우트 정보에서 폴리곤 등록으로 들어오면 신규 라우트도 자동 준비됩니다. 저장 시 TO:NEST 라우트 정보가 자동 생성/연결됩니다.</div>
     </section>
 
 
@@ -339,6 +339,29 @@ button{cursor:pointer}
           <label for="deliveryAddress">입차지 주소</label>
           <input id="deliveryAddress" class="control" type="text" placeholder="입차지 주소">
         </div>
+
+        <div class="cols">
+          <div class="field">
+            <label for="vendorDayName">주간 벤더</label>
+            <input id="vendorDayName" class="control" type="text" placeholder="예: 마루웰">
+          </div>
+          <div class="field">
+            <label for="vendorDayBn">주간 사업자번호</label>
+            <input id="vendorDayBn" class="control" type="text" placeholder="사업자번호">
+          </div>
+        </div>
+
+        <div class="cols">
+          <div class="field">
+            <label for="vendorNightName">야간 벤더</label>
+            <input id="vendorNightName" class="control" type="text" placeholder="예: 주식회사 투네스트">
+          </div>
+          <div class="field">
+            <label for="vendorNightBn">야간 사업자번호</label>
+            <input id="vendorNightBn" class="control" type="text" placeholder="사업자번호">
+          </div>
+        </div>
+        <div class="actionHint">사업자번호를 저장하면 MAROOWELL 벤더 연결과 TO:NEST 라우트 정보가 함께 갱신됩니다.</div>
 </div>
     </section>
 
@@ -388,6 +411,8 @@ const dom = {
   routeCount:$("#routeCount"), editorCard:$("#editorCard"), selectedId:$("#selectedId"),
   selectedMeta:$("#selectedMeta"), editCamp:$("#editCamp"), editCode:$("#editCode"),
   deliveryName:$("#deliveryName"), deliveryAddress:$("#deliveryAddress"),
+  vendorDayName:$("#vendorDayName"), vendorDayBn:$("#vendorDayBn"),
+  vendorNightName:$("#vendorNightName"), vendorNightBn:$("#vendorNightBn"),
   drawNewBtn:$("#drawNewBtn"), drawAddBtn:$("#drawAddBtn"),
   editPolygonBtn:$("#editPolygonBtn"), saveBtn:$("#saveBtn"),
   deleteBtn:$("#deleteBtn"), cancelEditBtn:$("#cancelEditBtn"),
@@ -661,32 +686,30 @@ async function routeInfoApiFetch(path,options={},retry=true){
 
 async function syncRouteInfoAfterMap(row,camp,code){
   try{
-    const sourceId=
-      row?.id ??
-      row?.maroowell_subsubroute_id ??
-      null;
-
-    const body={
-      camp,
-      route_code:code,
-      route_info_id:launchRouteInfoId||null
-    };
-
-    if(sourceId!=null){
-      body.maroowell_subsubroute_id=sourceId;
-    }
-
     return await routeInfoApiFetch(
-      "/sync-one",
+      "/from-map",
       {
         method:"POST",
-        body:JSON.stringify(body)
+        body:JSON.stringify({
+          route_info_id:launchRouteInfoId||null,
+          camp,
+          route_code:code,
+          source:row,
+          overrides:{
+            delivery_location_name:text(dom.deliveryName.value)||null,
+            delivery_location_address:text(dom.deliveryAddress.value)||null,
+            vendor_name_2w:text(dom.vendorDayName.value)||null,
+            vendor_name_1w:text(dom.vendorNightName.value)||null,
+            vendor_business_number_2w:text(dom.vendorDayBn.value)||null,
+            vendor_business_number_1w:text(dom.vendorNightBn.value)||null
+          }
+        })
       }
     );
   }catch(error){
-    console.warn("TO:NEST route-info sync skipped",error);
+    console.warn("TO:NEST route-info link failed",error);
     status(
-      "폴리곤은 MAROOWELL에 저장됐지만 TO:NEST 라우트 정보 동기화 실패: "+
+      "MAROOWELL 저장은 완료됐지만 TO:NEST 라우트 정보 연결 실패: "+
       (error?.message||String(error)),
       true
     );
@@ -760,7 +783,7 @@ async function initAuth(){
     `${state.profile.display_name||state.profile.email||session.user.email||"사용자"} · ${roleLabel(state.profile.role)}`;
 
   document.querySelectorAll(".editOnly").forEach(el=>{el.hidden=!state.canEdit});
-  [dom.editCamp,dom.editCode,dom.deliveryName,dom.deliveryAddress].forEach(el=>{el.disabled=!state.canEdit});
+  [dom.editCamp,dom.editCode,dom.deliveryName,dom.deliveryAddress,dom.vendorDayName,dom.vendorDayBn,dom.vendorNightName,dom.vendorNightBn].forEach(el=>{el.disabled=!state.canEdit});
 
   return true;
 }
@@ -977,6 +1000,10 @@ function selectRoute(id){
 
   const day=row.vendor_name_2w||row.vendor_2w_name||"-";
   const night=row.vendor_name_1w||row.vendor_1w_name||"-";
+  dom.vendorDayName.value=day==="-"?"":day;
+  dom.vendorNightName.value=night==="-"?"":night;
+  dom.vendorDayBn.value=text(row.vendor_business_number_2w);
+  dom.vendorNightBn.value=text(row.vendor_business_number_1w);
 
   dom.selectedMeta.textContent=
     `입차지 : ${text(row.delivery_location_name)||"-"}
@@ -1146,7 +1173,7 @@ function createDraftFromInputs(){
   }
   const code=codes[0];
   const id=`draft:${camp}:${code}`;
-  const row={id:null,camp,code,full_code:code,polygon_wgs84:null,delivery_location_name:"",delivery_location_address:"",__draft:true};
+  const row={id:null,camp,code,full_code:code,polygon_wgs84:null,delivery_location_name:"",delivery_location_address:"",vendor_business_number_1w:"",vendor_business_number_2w:"",vendor_name_1w:"",vendor_name_2w:"",__draft:true};
   state.rows.push(row);
   assignColors(state.rows);
   state.overlays.set(id,{row,polygons:[],labels:[]});
@@ -1258,6 +1285,8 @@ async function saveSelected(){
     camp,code,
     delivery_location_name:text(dom.deliveryName.value)||null,
     delivery_location_address:text(dom.deliveryAddress.value)||null,
+    vendor_business_number_2w:text(dom.vendorDayBn.value)||null,
+    vendor_business_number_1w:text(dom.vendorNightBn.value)||null,
     polygon_wgs84:polygonsToWgs84(pack.polygons)
   };
 
@@ -1293,7 +1322,7 @@ async function saveSelected(){
   await loadRoutes();
 
   status(
-    "저장 완료 · 폴리곤은 MAROOWELL, 라우트 정보는 TO:NEST에 연결되었습니다."
+    "저장 완료 · MAROOWELL 저장 + TO:NEST 라우트 정보 자동 연결 완료"
   );
 }
 
@@ -1375,7 +1404,7 @@ async function deletePolygonOnly(){
     text(pack.row.full_code||pack.row.code)
   );
 
-  status("\uD3F4\uB9AC\uACE4 \uC0AD\uC81C \uC644\uB8CC \u00B7 TO:NEST \uC0C1\uD0DC \uB3D9\uAE30\uD654 \uC644\uB8CC");
+  status("\uD3F4\uB9AC\uACE4 \uC0AD\uC81C \uC644\uB8CC \u00B7 TO:NEST \uB77C\uC6B0\uD2B8 \uC815\uBCF4 \uC790\uB3D9 \uAC31\uC2E0");
   await loadRoutes();
 }
 
@@ -1829,6 +1858,14 @@ async function init(){
               `${row.camp}/${row.full_code||row.code}`
             )
           );
+        }else if(
+          state.rows.length===0 &&
+          launchRouteInfoId &&
+          state.canEdit &&
+          launched.code
+        ){
+          createDraftFromInputs();
+          status("TO:NEST 라우트 정보에서 넘어온 신규 라우트입니다. 폴리곤을 그린 뒤 저장하세요.");
         }
       }catch(loadError){
         console.warn("launch route auto load failed",loadError);
