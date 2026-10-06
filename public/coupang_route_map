@@ -7,8 +7,8 @@
 <meta name="referrer" content="origin">
 <title>쿠팡 라우트 지도 | TO:NEST</title>
 
-<link rel="icon" href="/favicon.ico?v=13" type="image/x-icon">
-<link rel="shortcut icon" href="/favicon.ico?v=13" type="image/x-icon">
+<link rel="icon" href="/favicon.ico?v=14" type="image/x-icon">
+<link rel="shortcut icon" href="/favicon.ico?v=14" type="image/x-icon">
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=add4ce93b38c0ff9d9b9053728e067b3&autoload=false&libraries=services"></script>
@@ -69,9 +69,44 @@ button{cursor:pointer}
 .routeCode{min-width:0;flex:1;font-size:13px;font-weight:950}
 .polyBadge{min-height:19px;display:inline-flex;align-items:center;padding:0 6px;border-radius:999px;border:1px solid #d6e3e1;background:#f8fbfa;color:#536866;font-size:8.5px;font-weight:900}
 .polyBadge.yes{border-color:#a7e2d6;background:#ebfaf6;color:#047857}
-.routeMeta{margin-top:4px;color:#526663;font-size:10.5px;line-height:1.45;font-weight:750;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.routeMeta{
+  display:grid;
+  gap:2px;
+  margin-top:6px;
+  color:#526663;
+  font-size:10px;
+  line-height:1.45;
+  font-weight:800;
+}
+.routeMetaLine{
+  display:grid;
+  grid-template-columns:46px minmax(0,1fr);
+  gap:4px;
+  min-width:0;
+}
+.routeMetaKey{
+  color:#2d4440;
+  font-weight:950;
+}
+.routeMetaValue{
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
 .editor{padding:11px}
-.selectedMeta{margin-bottom:10px;padding:9px 10px;border:1px solid #d9e6e4;border-radius:10px;background:#f7fbfa;color:#3f5552;font-size:10.5px;line-height:1.45;font-weight:800}
+.selectedMeta{
+  margin-bottom:10px;
+  padding:9px 10px;
+  border:1px solid #d9e6e4;
+  border-radius:10px;
+  background:#f7fbfa;
+  color:#3f5552;
+  font-size:10.5px;
+  line-height:1.55;
+  font-weight:850;
+  white-space:pre-line;
+}
 .field{display:grid;gap:5px;margin-bottom:9px}
 .field label{color:#3f5552;font-size:10.5px;font-weight:900}
 .cols{display:grid;grid-template-columns:1fr 1fr;gap:8px}
@@ -119,7 +154,75 @@ button{cursor:pointer}
 .routeSwatch{width:11px;height:11px;flex:0 0 11px;border-radius:3px;border:1px solid rgba(15,23,42,.18)}
 .routeLabel{min-width:0!important;display:flex;align-items:center;gap:5px;padding:4px 8px!important;border-radius:11px!important;border:1px solid rgba(255,255,255,.14)!important;background:rgba(0,0,0,.52)!important;color:#fff!important;box-shadow:0 2px 8px rgba(0,0,0,.18)!important;backdrop-filter:blur(1.5px)!important;-webkit-backdrop-filter:blur(1.5px)!important;font-size:10px!important;font-weight:650!important;white-space:nowrap!important}
 .routeLabelDot{width:7px;height:7px;flex:0 0 7px;border-radius:999px;box-shadow:0 0 0 2px rgba(255,255,255,.12)}
-.routeLabelVendor{padding-left:5px;border-left:1px solid rgba(255,255,255,.16);color:rgba(255,255,255,.86);font-size:9px;font-weight:500}
+.routeLabelVendor{
+  display:grid;
+  gap:2px;
+  padding-left:7px;
+  border-left:1px solid rgba(255,255,255,.18);
+  color:rgba(255,255,255,.92);
+  font-size:9px;
+  line-height:1.22;
+  font-weight:500;
+  text-align:left;
+}
+.routeLabelVendorLine{
+  display:grid;
+  grid-template-columns:38px minmax(0,1fr);
+  gap:3px;
+}
+.routeLabelVendorKey{
+  color:#fff;
+  font-weight:750;
+}
+.routeLabelVendorValue{
+  min-width:0;
+  max-width:150px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+.roadviewWalker{
+  position:relative;
+  width:46px;
+  height:46px;
+  pointer-events:none;
+  filter:drop-shadow(0 2px 3px rgba(15,23,42,.28));
+}
+.roadviewWalkerCone{
+  position:absolute;
+  left:50%;
+  top:-21px;
+  width:25px;
+  height:32px;
+  transform:translateX(-50%) rotate(0deg);
+  transform-origin:50% 37px;
+  background:rgba(37,99,235,.48);
+  clip-path:polygon(50% 0,100% 100%,50% 77%,0 100%);
+}
+.roadviewWalkerHalo{
+  position:absolute;
+  left:50%;
+  top:50%;
+  width:30px;
+  height:30px;
+  transform:translate(-50%,-50%);
+  border-radius:999px;
+  background:rgba(37,99,235,.16);
+  border:2px solid rgba(37,99,235,.72);
+}
+.roadviewWalkerDot{
+  position:absolute;
+  left:50%;
+  top:50%;
+  width:12px;
+  height:12px;
+  transform:translate(-50%,-50%);
+  border-radius:999px;
+  background:#2563eb;
+  border:3px solid #fff;
+  box-shadow:0 0 0 1px rgba(37,99,235,.25);
+}
 .buttonGrid{display:none!important}
 .editor{padding:11px}
 @media(max-width:920px){.workspace{display:block}.actionGrid{grid-template-columns:repeat(3,minmax(0,1fr))}}
@@ -132,7 +235,7 @@ button{cursor:pointer}
 
 <header class="topbar">
   <button id="tnBoardMenuToggle" class="menuBtn" type="button" aria-label="TO:NEST 메뉴 열기">
-    <img src="/favicon.ico?v=13" alt="TO:NEST">
+    <img src="/favicon.ico?v=14" alt="TO:NEST">
   </button>
 
   <div class="titleBlock">
@@ -286,10 +389,12 @@ const dom = {
 
 const state = {
   sb:null, session:null, profile:null, canEdit:false,
-  map:null, roadview:null, roadviewClient:null, roadviewOn:false, isRoadmap:true, labelOn:true, vendorLabelOn:false,
+  map:null, roadview:null, roadviewClient:null, roadviewWalker:null,
+  roadviewOn:false, isRoadmap:true, labelOn:true, vendorLabelOn:false,
   rows:[], selectedId:null, selectedOriginal:null, overlays:new Map(),
   drawing:null, drawPoints:[], drawMarkers:[], drawLine:null,
-  editing:false, editMarkers:[]
+  editing:false, editMarkers:[],
+  lastRouteClickAt:0
 };
 
 const roleLabel = role => ({
@@ -567,12 +672,44 @@ function clearOverlays(){
 function makeLabel(row,position){
   const node=document.createElement("div");
   node.className="routeLabel";
+
   const color=row.__color||"#16a7a4";
   const code=text(row.full_code||row.code||"-");
+  const delivery=text(row.delivery_location_name)||"-";
   const day=row.vendor_name_2w||row.vendor_2w_name||"-";
   const night=row.vendor_name_1w||row.vendor_1w_name||"-";
-  node.innerHTML=`<span class="routeLabelDot" style="background:${color}"></span><span>${escapeHtml(code)}</span>${state.vendorLabelOn?`<span class="routeLabelVendor">\uC8FC ${escapeHtml(day)} \u00B7 \uC57C ${escapeHtml(night)}</span>`:""}`;
-  return new kakao.maps.CustomOverlay({position,content:node,yAnchor:1,zIndex:9});
+
+  node.innerHTML=`
+    <span class="routeLabelDot" style="background:${color}"></span>
+    <span>${escapeHtml(code)}</span>
+    ${
+      state.vendorLabelOn
+        ? `
+          <span class="routeLabelVendor">
+            <span class="routeLabelVendorLine">
+              <span class="routeLabelVendorKey">입차지</span>
+              <span class="routeLabelVendorValue">: ${escapeHtml(delivery)}</span>
+            </span>
+            <span class="routeLabelVendorLine">
+              <span class="routeLabelVendorKey">주간</span>
+              <span class="routeLabelVendorValue">: ${escapeHtml(day)}</span>
+            </span>
+            <span class="routeLabelVendorLine">
+              <span class="routeLabelVendorKey">야간</span>
+              <span class="routeLabelVendorValue">: ${escapeHtml(night)}</span>
+            </span>
+          </span>
+        `
+        : ""
+    }
+  `;
+
+  return new kakao.maps.CustomOverlay({
+    position,
+    content:node,
+    yAnchor:1,
+    zIndex:9
+  });
 }
 
 function escapeHtml(value){
@@ -601,7 +738,10 @@ function renderRows(fit=true){
       });
 
       polygon.setMap(state.map);
-      kakao.maps.event.addListener(polygon,"click",()=>selectRoute(id));
+      kakao.maps.event.addListener(polygon,"click",()=>{
+        state.lastRouteClickAt=Date.now();
+        selectRoute(id);
+      });
       pack.polygons.push(polygon);
       pts.forEach(p=>bounds.extend(p));
 
@@ -656,9 +796,25 @@ function renderRouteList(){
 
     const meta=document.createElement("div");
     meta.className="routeMeta";
+
+    const delivery=text(row.delivery_location_name)||"-";
     const day=row.vendor_name_2w||row.vendor_2w_name||"-";
     const night=row.vendor_name_1w||row.vendor_1w_name||"-";
-    meta.textContent=`${row.delivery_location_name||"입차지 미지정"} · 주 ${day} · 야 ${night}`;
+
+    meta.innerHTML=`
+      <div class="routeMetaLine">
+        <span class="routeMetaKey">입차지</span>
+        <span class="routeMetaValue">: ${escapeHtml(delivery)}</span>
+      </div>
+      <div class="routeMetaLine">
+        <span class="routeMetaKey">주간</span>
+        <span class="routeMetaValue">: ${escapeHtml(day)}</span>
+      </div>
+      <div class="routeMetaLine">
+        <span class="routeMetaKey">야간</span>
+        <span class="routeMetaValue">: ${escapeHtml(night)}</span>
+      </div>
+    `;
 
     top.append(swatch,code,badge);
     btn.append(top,meta);
@@ -692,7 +848,13 @@ function selectRoute(id){
   const night=row.vendor_name_1w||row.vendor_1w_name||"-";
 
   dom.selectedMeta.textContent=
-    `주간 ${day} · 야간 ${night} · ${row.polygon_wgs84?"폴리곤 등록":"폴리곤 미등록"}`;
+    `입차지 : ${text(row.delivery_location_name)||"-"}
+`+
+    `주간 : ${day}
+`+
+    `야간 : ${night}
+`+
+    `${row.polygon_wgs84?"폴리곤 등록":"폴리곤 미등록"}`;
 
   if(pack.polygons.length){
     const bounds=new kakao.maps.LatLngBounds();
@@ -709,6 +871,30 @@ function selectRoute(id){
 
   if(window.matchMedia("(max-width:920px)").matches){
     dom.workspace.classList.remove("mobileOpen");
+  }
+}
+
+function clearRouteSelection(message="선택 해제"){
+  stopEditMode();
+  stopDrawMode();
+
+  state.selectedId=null;
+  state.selectedOriginal=null;
+  dom.editorCard.hidden=true;
+
+  for(const pack of state.overlays.values()){
+    pack.polygons.forEach(p=>{
+      p.setOptions({
+        strokeWeight:2,
+        zIndex:2
+      });
+    });
+  }
+
+  renderRouteList();
+
+  if(message){
+    status(message);
   }
 }
 
@@ -1115,49 +1301,172 @@ function toggleSidebar(){
   },200);
 }
 
+function createRoadviewWalker(position){
+  const root=document.createElement("div");
+  root.className="roadviewWalker";
+
+  const cone=document.createElement("div");
+  cone.className="roadviewWalkerCone";
+
+  const halo=document.createElement("div");
+  halo.className="roadviewWalkerHalo";
+
+  const dot=document.createElement("div");
+  dot.className="roadviewWalkerDot";
+
+  root.append(cone,halo,dot);
+
+  const overlay=new kakao.maps.CustomOverlay({
+    position,
+    content:root,
+    xAnchor:.5,
+    yAnchor:.5,
+    zIndex:99
+  });
+
+  return {
+    setMap(targetMap){
+      overlay.setMap(targetMap);
+    },
+
+    setPosition(nextPosition){
+      if(nextPosition){
+        overlay.setPosition(nextPosition);
+      }
+    },
+
+    setAngle(angle){
+      const pan=((Number(angle)||0)%360+360)%360;
+      cone.style.transform=
+        `translateX(-50%) rotate(${pan}deg)`;
+    }
+  };
+}
+
+function syncRoadviewWalker(){
+  if(!state.roadview||!state.map)return;
+
+  const position=
+    state.roadview.getPosition?.() ||
+    state.map.getCenter();
+
+  if(!state.roadviewWalker){
+    state.roadviewWalker=
+      createRoadviewWalker(position);
+  }
+
+  state.roadviewWalker.setPosition(position);
+
+  if(state.roadviewOn){
+    state.roadviewWalker.setMap(state.map);
+  }
+
+  const viewpoint=
+    state.roadview.getViewpoint?.();
+
+  if(viewpoint){
+    state.roadviewWalker.setAngle(
+      viewpoint.pan
+    );
+  }
+}
+
 function setRoadviewAt(latlng){
   if(!state.roadviewOn||!latlng)return;
 
-  state.roadviewClient.getNearestPanoId(latlng,200,panoId=>{
-    if(!panoId){
-      status("근처 로드뷰가 없습니다.",true);
-      return;
-    }
+  state.roadviewClient.getNearestPanoId(
+    latlng,
+    200,
+    panoId=>{
+      if(!panoId){
+        status("근처 로드뷰가 없습니다.",true);
+        return;
+      }
 
-    document.getElementById("mapWrap")?.classList.add("roadview-open");
-    state.roadview.setPanoId(panoId,latlng);
+      document
+        .getElementById("mapWrap")
+        ?.classList.add("roadview-open");
+
+      state.roadview.setPanoId(
+        panoId,
+        latlng
+      );
+
+      syncRoadviewWalker();
+      showHint("");
+
+      setTimeout(()=>{
+        try{
+          state.map.relayout();
+          state.roadview.relayout?.();
+        }catch{}
+      },80);
+
+      status("로드뷰 표시 · 파란 표시가 현재 위치와 시야 방향입니다.");
+    }
+  );
+}
+
+function setRoadviewOn(on){
+  state.roadviewOn=Boolean(on);
+
+  dom.roadviewBtn.textContent=
+    state.roadviewOn
+      ? "로드뷰 종료"
+      : "로드뷰";
+
+  const wrap=
+    document.getElementById(
+      "mapWrap"
+    );
+
+  if(!state.roadviewOn){
+    wrap?.classList.remove(
+      "roadview-open"
+    );
+
+    try{
+      state.map.removeOverlayMapTypeId(
+        kakao.maps.MapTypeId.ROADVIEW
+      );
+    }catch{}
+
+    state.roadviewWalker?.setMap(null);
     showHint("");
 
     setTimeout(()=>{
       try{
         state.map.relayout();
-        state.roadview.relayout?.();
       }catch{}
     },80);
 
-    status("로드뷰 표시");
-  });
-}
-
-function setRoadviewOn(on){
-  state.roadviewOn=Boolean(on);
-  dom.roadviewBtn.textContent=state.roadviewOn?"로드뷰 종료":"로드뷰";
-
-  const wrap=document.getElementById("mapWrap");
-
-  if(!state.roadviewOn){
-    wrap?.classList.remove("roadview-open");
-    try{state.map.removeOverlayMapTypeId(kakao.maps.MapTypeId.ROADVIEW);}catch{}
-    showHint("");
-    setTimeout(()=>{try{state.map.relayout();}catch{}},80);
     status("로드뷰 종료");
     return;
   }
 
-  try{state.map.addOverlayMapTypeId(kakao.maps.MapTypeId.ROADVIEW);}catch{}
-  wrap?.classList.remove("roadview-open");
-  showHint("로드뷰: 파란 도로 위에서 원하는 위치를 클릭하세요.");
-  status("로드뷰 위치 선택 모드");
+  try{
+    state.map.addOverlayMapTypeId(
+      kakao.maps.MapTypeId.ROADVIEW
+    );
+  }catch{}
+
+  wrap?.classList.remove(
+    "roadview-open"
+  );
+
+  if(state.roadviewWalker){
+    state.roadviewWalker.setMap(
+      state.map
+    );
+  }
+
+  showHint(
+    "로드뷰: 파란 도로 위에서 원하는 위치를 클릭하세요."
+  );
+
+  status(
+    "로드뷰 위치 선택 모드"
+  );
 }
 
 function bindEvents(){
@@ -1218,8 +1527,19 @@ function bindEvents(){
       addDrawPoint(e.latLng);
       return;
     }
+
     if(state.roadviewOn&&e?.latLng){
       setRoadviewAt(e.latLng);
+      return;
+    }
+
+    // 폴리곤 클릭 직후 지도 click 이벤트가 이어지는 경우 선택 해제 방지.
+    if(Date.now()-state.lastRouteClickAt<180){
+      return;
+    }
+
+    if(state.selectedId){
+      clearRouteSelection("선택 해제");
     }
   });
 
@@ -1231,10 +1551,25 @@ function bindEvents(){
     if(e.key==="Enter"&&state.drawing){
       e.preventDefault();
       finishDraw();
+      return;
     }
 
-    if(e.key==="Escape"&&(state.drawing||state.editing)){
-      stopDrawMode();stopEditMode();status("편집을 취소했습니다.");
+    if(e.key==="Escape"){
+      e.preventDefault();
+
+      if(state.drawing){
+        stopDrawMode();
+      }
+
+      if(state.editing){
+        stopEditMode();
+      }
+
+      if(state.selectedId){
+        clearRouteSelection("선택 해제");
+      }else{
+        status("편집/선택 해제");
+      }
     }
   });
 
@@ -1255,10 +1590,60 @@ async function init(){
   state.roadview=new kakao.maps.Roadview($("#roadview"));
   state.roadviewClient=new kakao.maps.RoadviewClient();
 
-  kakao.maps.event.addListener(state.roadview,"position_changed",()=>{
-    const pos=state.roadview.getPosition?.();
-    if(pos)state.map.setCenter(pos);
-  });
+  kakao.maps.event.addListener(
+    state.roadview,
+    "init",
+    syncRoadviewWalker
+  );
+
+  kakao.maps.event.addListener(
+    state.roadview,
+    "viewpoint_changed",
+    ()=>{
+      if(!state.roadviewWalker){
+        syncRoadviewWalker();
+      }
+
+      const viewpoint=
+        state.roadview.getViewpoint?.();
+
+      if(
+        viewpoint &&
+        state.roadviewWalker
+      ){
+        state.roadviewWalker.setAngle(
+          viewpoint.pan
+        );
+      }
+    }
+  );
+
+  kakao.maps.event.addListener(
+    state.roadview,
+    "position_changed",
+    ()=>{
+      const pos=
+        state.roadview.getPosition?.();
+
+      if(!pos)return;
+
+      if(!state.roadviewWalker){
+        syncRoadviewWalker();
+      }
+
+      state.roadviewWalker?.setPosition(
+        pos
+      );
+
+      if(state.roadviewOn){
+        state.roadviewWalker?.setMap(
+          state.map
+        );
+      }
+
+      state.map.setCenter(pos);
+    }
+  );
 
   bindEvents();
 
