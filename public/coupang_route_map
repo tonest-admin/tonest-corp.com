@@ -7,12 +7,12 @@
 <meta name="referrer" content="origin">
 <title>쿠팡 라우트 지도 | TO:NEST</title>
 
-<link rel="icon" href="/favicon.ico?v=10" type="image/x-icon">
-<link rel="shortcut icon" href="/favicon.ico?v=10" type="image/x-icon">
+<link rel="icon" href="/favicon.ico?v=11" type="image/x-icon">
+<link rel="shortcut icon" href="/favicon.ico?v=11" type="image/x-icon">
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=add4ce93b38c0ff9d9b9053728e067b3&autoload=false&libraries=services"></script>
-<script src="/board-menu.js?v=5" defer></script>
+<script src="/board-menu.js?v=6" defer></script>
 
 <style>
 :root{
@@ -107,7 +107,7 @@ button{cursor:pointer}
 
 <header class="topbar">
   <button id="tnBoardMenuToggle" class="menuBtn" type="button" aria-label="TO:NEST 메뉴 열기">
-    <img src="/favicon.ico?v=10" alt="TO:NEST">
+    <img src="/favicon.ico?v=11" alt="TO:NEST">
   </button>
 
   <div class="titleBlock">
@@ -348,17 +348,83 @@ let __editDot,__drawDot;
 const editDotImage=()=>__editDot||(__editDot=makeDotImage());
 const drawDotImage=()=>__drawDot||(__drawDot=makeDotImage({size:10,fill:"#16a7a4",stroke:"#fff"}));
 
-async function apiFetch(path,options={}){
-  const token=state.session?.access_token;
-  if(!token)throw new Error("로그인 세션이 없습니다.");
+async function currentAccessToken(forceRefresh=false){
+  if(!state.sb){
+    throw new Error("Supabase 클라이언트가 준비되지 않았습니다.");
+  }
+
+  if(forceRefresh){
+    const {data,error}=await state.sb.auth.refreshSession();
+    if(error)throw error;
+
+    state.session=data?.session||null;
+  }else{
+    const {data,error}=await state.sb.auth.getSession();
+    if(error)throw error;
+
+    state.session=data?.session||null;
+
+    const expiresAt=Number(state.session?.expires_at||0);
+    const now=Math.floor(Date.now()/1000);
+
+    if(
+      state.session?.refresh_token &&
+      expiresAt &&
+      expiresAt-now < 90
+    ){
+      const refreshed=await state.sb.auth.refreshSession();
+
+      if(!refreshed.error){
+        state.session=refreshed.data?.session||state.session;
+      }
+    }
+  }
+
+  return state.session?.access_token||"";
+}
+
+async function apiFetch(path,options={},retry=true){
+  let token=await currentAccessToken(false);
+
+  if(!token){
+    throw new Error("로그인 세션이 없습니다.");
+  }
 
   const headers=new Headers(options.headers||{});
   headers.set("Authorization","Bearer "+token);
-  if(options.body&&!headers.has("Content-Type"))headers.set("Content-Type","application/json");
 
-  const response=await fetch(ROUTE_API+path,{...options,headers,cache:"no-store"});
+  if(options.body&&!headers.has("Content-Type")){
+    headers.set("Content-Type","application/json");
+  }
+
+  let response=await fetch(
+    ROUTE_API+path,
+    {...options,headers,cache:"no-store"}
+  );
+
+  if(response.status===401&&retry){
+    token=await currentAccessToken(true);
+
+    if(token){
+      headers.set("Authorization","Bearer "+token);
+
+      response=await fetch(
+        ROUTE_API+path,
+        {...options,headers,cache:"no-store"}
+      );
+    }
+  }
+
   const payload=await response.json().catch(()=>({}));
-  if(!response.ok)throw new Error(payload?.message||payload?.error||`HTTP ${response.status}`);
+
+  if(!response.ok){
+    throw new Error(
+      payload?.message||
+      payload?.error||
+      `HTTP ${response.status}`
+    );
+  }
+
   return payload;
 }
 
@@ -375,7 +441,9 @@ async function initAuth(){
     {auth:{persistSession:true,storage:sessionStorage,autoRefreshToken:true,detectSessionInUrl:true}}
   );
 
-  const {data:{session}}=await state.sb.auth.getSession();
+  const {data:{session},error:sessionError}=await state.sb.auth.getSession();
+
+  if(sessionError)throw sessionError;
 
   if(!session?.access_token){
     location.replace("/?next=%2Fcoupang_route_map");
@@ -383,6 +451,20 @@ async function initAuth(){
   }
 
   state.session=session;
+
+  // getUser() forces Supabase to validate the current session once.
+  const userCheck=await state.sb.auth.getUser();
+
+  if(userCheck.error){
+    const refreshed=await state.sb.auth.refreshSession();
+
+    if(refreshed.error||!refreshed.data?.session?.access_token){
+      location.replace("/?next=%2Fcoupang_route_map");
+      return false;
+    }
+
+    state.session=refreshed.data.session;
+  }
 
   const me=await apiFetch("/me");
   state.profile=me.profile||{};
@@ -920,9 +1002,7 @@ function bindEvents(){
 }
 
 async function init(){
-  const ok=await initAuth();
-  if(!ok)return;
-
+  // 지도 자체는 인증과 분리해서 먼저 생성.
   state.map=new kakao.maps.Map($("#map"),{
     center:new kakao.maps.LatLng(36.45,127.85),
     level:13
@@ -931,7 +1011,27 @@ async function init(){
   bindEvents();
 
   document.documentElement.style.visibility="visible";
-  status(state.canEdit?"조회 · 수정 가능":"조회 전용 권한");
+  status("지도 준비 완료 · 로그인 권한 확인 중...");
+
+  try{
+    const ok=await initAuth();
+    if(!ok)return;
+
+    status(state.canEdit?"조회 · 수정 가능":"조회 전용 권한");
+  }catch(error){
+    console.error(error);
+
+    // 지도는 그대로 유지하고, 조회/수정 기능만 잠근다.
+    dom.searchBtn.disabled=true;
+    dom.reloadBtn.disabled=true;
+    document.querySelectorAll(".editOnly").forEach(el=>{el.hidden=true});
+
+    status(
+      "지도는 정상 로드되었습니다. 로그인 권한 확인 실패: "+
+      (error?.message||String(error)),
+      true
+    );
+  }
 }
 
 if(window.kakao?.maps){
