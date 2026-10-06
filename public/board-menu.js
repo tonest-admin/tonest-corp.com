@@ -4,10 +4,11 @@
   if (window.__TONEST_BOARD_MENU_INIT__) return;
   window.__TONEST_BOARD_MENU_INIT__ = true;
 
-  const BUILD = "20261006-route-info-v1";
+  const BUILD = "20261007-realtime-v1";
 
   const PAGES = [
     { key:"home", label:"Home", path:"/home", desc:"투네스트 운영 홈" },
+    { key:"realtime", label:"실시간 현황", path:"/realtime", desc:"전체 캠프 실시간 배송 · 반품 · 프백 현황" },
     { key:"info", label:"TO:NEST 정보", path:"/tonest_info", desc:"인사 · 운영 기본정보" },
     { key:"coupang_camp", label:"쿠팡 캠프 조회", path:"/coupang_camp", desc:"공용 캠프 · 본캠프 · 수신 SH · 채번 링크 관리" },
     { key:"route_info", label:"라우트 정보", path:"/route_info", desc:"TO:NEST 라우트 · 단가 · 서서브 정보 · 지도 연결 관리" },
@@ -37,7 +38,6 @@
 
     const style = document.createElement("style");
     style.id = "tn-board-menu-style";
-
     style.textContent = `
       .tn-menu-backdrop{
         position:fixed;inset:0;z-index:99990;display:none;
@@ -99,7 +99,6 @@
         .tn-menu-panel{top:7px;left:7px;width:calc(100vw - 14px);max-height:calc(100vh - 14px);border-radius:16px}
       }
     `;
-
     document.head.appendChild(style);
   }
 
@@ -109,41 +108,21 @@
 
     const backdrop = document.createElement("div");
     const panel = document.createElement("div");
-
     backdrop.className = "tn-menu-backdrop";
     panel.className = "tn-menu-panel";
 
     panel.innerHTML = `
       <div class="tn-menu-head">
-        <div class="tn-menu-brand">
-          <img src="/favicon.ico?v=15" alt="TO:NEST">
-        </div>
-
-        <div class="tn-menu-title">
-          TO:NEST 메뉴
-          <div class="tn-menu-subtitle">OPERATIONS</div>
-        </div>
-
+        <div class="tn-menu-brand"><img src="/favicon.ico?v=15" alt="TO:NEST"></div>
+        <div class="tn-menu-title">TO:NEST 메뉴<div class="tn-menu-subtitle">OPERATIONS</div></div>
         <button class="tn-menu-close" type="button">닫기</button>
       </div>
-
       <div class="tn-menu-list">
         ${PAGES.map(page => `
-          <a
-            class="
-              tn-menu-item
-              ${norm(page.path) === currentPath ? "current" : ""}
-              ${page.restricted ? "restricted" : ""}
-            "
-            href="${esc(page.path)}"
-          >
+          <a class="tn-menu-item ${norm(page.path) === currentPath ? "current" : ""} ${page.restricted ? "restricted" : ""}" href="${esc(page.path)}">
             <div class="tn-menu-item-title-row">
               <div class="tn-menu-item-title">${esc(page.label)}</div>
-              ${
-                page.restricted
-                  ? `<span class="tn-menu-admin-badge">최고관리자</span>`
-                  : ""
-              }
+              ${page.restricted ? `<span class="tn-menu-admin-badge">최고관리자</span>` : ""}
             </div>
             <div class="tn-menu-item-desc">${esc(page.desc)}</div>
           </a>
@@ -157,7 +136,6 @@
       backdrop.classList.remove("open");
       panel.classList.remove("open");
     };
-
     const open = () => {
       backdrop.classList.add("open");
       panel.classList.add("open");
@@ -165,10 +143,7 @@
 
     backdrop.addEventListener("click",close);
     panel.querySelector(".tn-menu-close").addEventListener("click",close);
-
-    document.addEventListener("keydown",event=>{
-      if(event.key==="Escape")close();
-    });
+    document.addEventListener("keydown",event=>{ if(event.key === "Escape") close(); });
 
     const toggle = document.getElementById("tnBoardMenuToggle");
     if(toggle){
@@ -179,7 +154,7 @@
     }
   }
 
-  if(document.readyState==="loading"){
+  if(document.readyState === "loading"){
     document.addEventListener("DOMContentLoaded",init,{once:true});
   }else{
     init();
