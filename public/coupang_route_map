@@ -65,6 +65,10 @@ button{cursor:pointer}
 .routeList{max-height:31vh;overflow:auto;padding:8px;display:grid;gap:6px}
 .routeItem{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:11px;background:#fff;text-align:left}
 .routeItem:hover,.routeItem.active{border-color:#71c7c0;background:#f1fbf9}
+.routeItem.active:focus{
+  outline:2px solid rgba(22,167,164,.28);
+  outline-offset:1px;
+}
 .routeTop{display:flex;align-items:center;gap:6px}
 .routeCode{min-width:0;flex:1;font-size:13px;font-weight:950}
 .polyBadge{min-height:19px;display:inline-flex;align-items:center;padding:0 6px;border-radius:999px;border:1px solid #d6e3e1;background:#f8fbfa;color:#536866;font-size:8.5px;font-weight:900}
@@ -929,6 +933,30 @@ function selectedPack(){
   return state.overlays.get(String(state.selectedId))||null;
 }
 
+function focusSelectedRouteListItem(){
+  if(!state.selectedId||!dom.routeList)return;
+
+  requestAnimationFrame(()=>{
+    const target=Array
+      .from(dom.routeList.querySelectorAll(".routeItem[data-id]"))
+      .find(item=>String(item.dataset.id)===String(state.selectedId));
+
+    if(!target)return;
+
+    try{
+      target.focus({preventScroll:true});
+    }catch{
+      target.focus();
+    }
+
+    target.scrollIntoView({
+      behavior:"smooth",
+      block:"center",
+      inline:"nearest"
+    });
+  });
+}
+
 function selectRoute(id){
   stopEditMode();
   stopDrawMode();
@@ -971,6 +999,7 @@ function selectRoute(id){
   }
 
   renderRouteList();
+  focusSelectedRouteListItem();
 
   if(window.matchMedia("(max-width:920px)").matches){
     dom.workspace.classList.remove("mobileOpen");
