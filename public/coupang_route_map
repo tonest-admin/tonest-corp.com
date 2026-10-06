@@ -7,12 +7,12 @@
 <meta name="referrer" content="origin">
 <title>쿠팡 라우트 지도 | TO:NEST</title>
 
-<link rel="icon" href="/favicon.ico?v=14" type="image/x-icon">
-<link rel="shortcut icon" href="/favicon.ico?v=14" type="image/x-icon">
+<link rel="icon" href="/favicon.ico?v=15" type="image/x-icon">
+<link rel="shortcut icon" href="/favicon.ico?v=15" type="image/x-icon">
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=add4ce93b38c0ff9d9b9053728e067b3&autoload=false&libraries=services"></script>
-<script src="/board-menu.js?v=7" defer></script>
+<script src="/board-menu.js?v=8" defer></script>
 
 <style>
 :root{
@@ -235,7 +235,7 @@ button{cursor:pointer}
 
 <header class="topbar">
   <button id="tnBoardMenuToggle" class="menuBtn" type="button" aria-label="TO:NEST 메뉴 열기">
-    <img src="/favicon.ico?v=14" alt="TO:NEST">
+    <img src="/favicon.ico?v=15" alt="TO:NEST">
   </button>
 
   <div class="titleBlock">
@@ -245,6 +245,7 @@ button{cursor:pointer}
 
   <div class="grow"></div>
   <span id="userPill" class="pill">권한 확인 중</span>
+  <a class="btn blue" href="/route_info" style="text-decoration:none">라우트 정보</a>
   <button id="reloadBtn" class="btn" type="button">새로고침</button>
 </header>
 
@@ -371,6 +372,9 @@ button{cursor:pointer}
 
 const AUTH_BASE = location.origin;
 const ROUTE_API = "https://route.tonest-admin.workers.dev";
+const ROUTE_INFO_API = "https://route-info.tonest-admin.workers.dev";
+const launchParams = new URLSearchParams(location.search);
+const launchRouteInfoId = launchParams.get("route_info_id") || "";
 const $ = s => document.querySelector(s);
 
 const dom = {
@@ -605,6 +609,105 @@ async function apiFetch(path,options={},retry=true){
   }
 
   return payload;
+}
+
+async function routeInfoApiFetch(path,options={},retry=true){
+  let token=await currentAccessToken(false);
+
+  if(!token){
+    throw new Error("로그인 세션이 없습니다.");
+  }
+
+  const headers=new Headers(options.headers||{});
+  headers.set("Authorization","Bearer "+token);
+
+  if(options.body&&!headers.has("Content-Type")){
+    headers.set("Content-Type","application/json");
+  }
+
+  let response=await fetch(
+    ROUTE_INFO_API+path,
+    {...options,headers,cache:"no-store"}
+  );
+
+  if(response.status===401&&retry){
+    token=await currentAccessToken(true);
+
+    if(token){
+      headers.set("Authorization","Bearer "+token);
+      response=await fetch(
+        ROUTE_INFO_API+path,
+        {...options,headers,cache:"no-store"}
+      );
+    }
+  }
+
+  const payload=await response.json().catch(()=>({}));
+
+  if(!response.ok){
+    throw new Error(
+      payload?.message||
+      payload?.error||
+      `ROUTE-INFO HTTP ${response.status}`
+    );
+  }
+
+  return payload;
+}
+
+async function syncRouteInfoAfterMap(row,camp,code){
+  try{
+    const sourceId=
+      row?.id ??
+      row?.maroowell_subsubroute_id ??
+      null;
+
+    const body={
+      camp,
+      route_code:code,
+      route_info_id:launchRouteInfoId||null
+    };
+
+    if(sourceId!=null){
+      body.maroowell_subsubroute_id=sourceId;
+    }
+
+    return await routeInfoApiFetch(
+      "/sync-one",
+      {
+        method:"POST",
+        body:JSON.stringify(body)
+      }
+    );
+  }catch(error){
+    console.warn("TO:NEST route-info sync skipped",error);
+    status(
+      "폴리곤은 MAROOWELL에 저장됐지만 TO:NEST 라우트 정보 동기화 실패: "+
+      (error?.message||String(error)),
+      true
+    );
+    return null;
+  }
+}
+
+function applyLaunchRouteParams(){
+  const camp=
+    launchParams.get("camp")||
+    launchParams.get("camp_name")||
+    "";
+
+  const code=
+    launchParams.get("code")||
+    launchParams.get("route")||
+    "";
+
+  const mode=launchParams.get("mode")||"exact";
+
+  if(camp)dom.campInput.value=camp;
+  if(code)dom.codeInput.value=code;
+  if(mode)dom.modeSelect.value=mode;
+
+  return {camp,code};
 }
 
 async function initAuth(){
@@ -1131,18 +1234,38 @@ async function saveSelected(){
 
   status("라우트 저장 중...");
 
+  let savedPayload=null;
+
   if(pack.row.id==null){
-    await apiFetch("/routes",{method:"POST",body:JSON.stringify(payload)});
-    status("신규 라우트를 저장했습니다.");
+    savedPayload=await apiFetch(
+      "/routes",
+      {method:"POST",body:JSON.stringify(payload)}
+    );
+    status("신규 라우트를 MAROOWELL에 저장했습니다.");
   }else{
-    await apiFetch("/routes/"+pack.row.id,{method:"PATCH",body:JSON.stringify(payload)});
-    status("라우트 통합 데이터를 동기화하고 저장했습니다.");
+    savedPayload=await apiFetch(
+      "/routes/"+pack.row.id,
+      {method:"PATCH",body:JSON.stringify(payload)}
+    );
+    status("MAROOWELL 라우트 통합 데이터를 저장했습니다.");
   }
+
+  const savedRow=
+    savedPayload?.row||
+    savedPayload?.route||
+    savedPayload?.data||
+    pack.row;
+
+  await syncRouteInfoAfterMap(savedRow,camp,code);
 
   dom.campInput.value=camp;
   dom.codeInput.value=code;
   dom.modeSelect.value="exact";
   await loadRoutes();
+
+  status(
+    "저장 완료 · 폴리곤은 MAROOWELL, 라우트 정보는 TO:NEST에 연결되었습니다."
+  );
 }
 
 async function deleteSelected(){
@@ -1209,14 +1332,21 @@ async function deletePolygonOnly(){
     status("\uC784\uC2DC \uD3F4\uB9AC\uACE4\uC744 \uC0AD\uC81C\uD588\uC2B5\uB2C8\uB2E4.");
     return;
   }
-  await apiFetch("/routes/"+pack.row.id,{method:"PATCH",body:JSON.stringify({
+  const removed=await apiFetch("/routes/"+pack.row.id,{method:"PATCH",body:JSON.stringify({
     camp:text(pack.row.camp),
     code:text(pack.row.full_code||pack.row.code),
     delivery_location_name:text(pack.row.delivery_location_name)||null,
     delivery_location_address:text(pack.row.delivery_location_address)||null,
     polygon_wgs84:null
   })});
-  status("\uD3F4\uB9AC\uACE4 \uC0AD\uC81C \uC644\uB8CC");
+
+  await syncRouteInfoAfterMap(
+    removed?.row||removed?.route||pack.row,
+    text(pack.row.camp),
+    text(pack.row.full_code||pack.row.code)
+  );
+
+  status("\uD3F4\uB9AC\uACE4 \uC0AD\uC81C \uC644\uB8CC \u00B7 TO:NEST \uC0C1\uD0DC \uB3D9\uAE30\uD654 \uC644\uB8CC");
   await loadRoutes();
 }
 
@@ -1655,6 +1785,26 @@ async function init(){
     if(!ok)return;
 
     status(state.canEdit?"\uC870\uD68C \u00B7 \uB4F1\uB85D \u00B7 \uC218\uC815 \uAC00\uB2A5":"\uC870\uD68C \uC804\uC6A9 \uAD8C\uD55C");
+
+    const launched=applyLaunchRouteParams();
+
+    if(launched.camp){
+      try{
+        await loadRoutes();
+
+        if(state.rows.length===1){
+          const row=state.rows[0];
+          selectRoute(
+            String(
+              row.id ??
+              `${row.camp}/${row.full_code||row.code}`
+            )
+          );
+        }
+      }catch(loadError){
+        console.warn("launch route auto load failed",loadError);
+      }
+    }
   }catch(error){
     console.error(error);
 
