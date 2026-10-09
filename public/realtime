@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8">
-<meta name="tonest-build" content="2026-10-09-direct-toggle-v1">
+<meta name="tonest-build" content="2026-10-10-schema-guard-v2">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="referrer" content="origin">
 <title>실시간 현황 | TO:NEST</title>
@@ -232,10 +232,19 @@ function renderCollectorState(){
 }
 async function collectorClick(){
   if(S.controlBusy)return;
-  try{S.controlBusy=true;renderCollectorState();const result=await api('/collector/check',{method:'POST'});S.schema=result.schema;
-    setStatus(result.schema.ready?'DB \ud544\uc218 \uceec\ub7fc \ud655\uc778 \uc644\ub8cc. \uc218\uc9d1 \uc0c1\ud0dc\ub97c \ub2e4\uc2dc \uc77d\uc2b5\ub2c8\ub2e4.':esc(schemaText(result.schema)),!result.schema.ready);
+  try{
+    S.controlBusy=true;renderCollectorState();
+    const result=await api('/collector/check',{method:'POST'});
+    if(!result?.schema || typeof result.schema.ready!=='boolean'){
+      const msg='수집기 응답에 schema.ready가 없습니다. 프론트와 META Worker 코드 버전을 맞춰 배포하세요. (01_META_COLLECTOR_FULL.txt)';
+      S.collectorError=msg;
+      setStatus(esc(msg)+(result?.version?' / Worker version: '+esc(result.version):''),true);
+      return;
+    }
+    S.schema=result.schema;
+    setStatus(result.schema.ready?'DB 필수 컬럼 확인 완료. 수집 상태를 다시 읽습니다.':esc(schemaText(result.schema)),!result.schema.ready);
     await loadCollectorState();
-  }catch(e){setStatus(esc(e.message),true);}finally{S.controlBusy=false;renderCollectorState();}
+  }catch(e){setStatus(esc(e?.message||String(e)),true);}finally{S.controlBusy=false;renderCollectorState();}
 }
 async function toggleCollector(){
   if(!S.isAdmin||S.controlBusy||S.collectorPaused==null)return;
