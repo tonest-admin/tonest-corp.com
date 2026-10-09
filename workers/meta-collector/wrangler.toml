@@ -1,0 +1,13 @@
+name = "meta-direct-poc"
+main = "entry.js"
+compatibility_date = "2026-10-06"
+keep_vars = true
+workers_dev = true
+
+[triggers]
+crons = ["* * * * *"]
+
+[[services]]
+binding = "CAMP_DIRECTORY"
+service = "coupang-camps"
+entrypoint = "RealtimeCampDirectory"

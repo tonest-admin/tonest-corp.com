@@ -1,0 +1,87 @@
+name: Test TO:NEST realtime parity
+on:
+  push:
+    branches: [main]
+    paths: ['workers/**', 'public/realtime*', 'database/**', 'tests/**', '.github/workflows/test-realtime.yml']
+  workflow_dispatch:
+    inputs:
+      schema_applied:
+        description: 'Enable collection only after repair SQL and production schema audit have succeeded'
+        type: boolean
+        required: false
+        default: false
+permissions:
+  contents: read
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: ci-only-password
+          POSTGRES_DB: realtime_test
+        ports: ['5432:5432']
+        options: --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGHOST: localhost
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: ci-only-password
+      PGDATABASE: realtime_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --test tests/*.test.mjs
+      - name: Check JavaScript syntax
+        run: |
+          node --check workers/meta-collector/entry.js
+          node --check workers/coupang-camps/entry.js
+          python -c 'import pathlib,re; pathlib.Path("/tmp/realtime.js").write_text("\n".join(re.findall(r"<script(?:\s[^>]*)?>(.*?)</script>",pathlib.Path("public/realtime").read_text(),re.S)))'
+          node --check /tmp/realtime.js
+      - name: Install schema twice in synthetic PostgreSQL 17
+        run: |
+          psql -v ON_ERROR_STOP=1 -f tests/db-fixture.sql
+          psql -v ON_ERROR_STOP=1 -f database/repair-realtime-schema.sql
+          psql -v ON_ERROR_STOP=1 -f database/repair-realtime-schema.sql
+          psql -v ON_ERROR_STOP=1 -f tests/db-regression.sql
+      - name: Restore a missing third-round column in an existing table
+        run: |
+          psql -v ON_ERROR_STOP=1 -c 'ALTER TABLE public.meta_realtime_current DROP COLUMN round3_completion_method;'
+          psql -v ON_ERROR_STOP=1 -f database/repair-realtime-schema.sql
+          psql -v ON_ERROR_STOP=1 -c "DO \$\$ BEGIN IF NOT EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='meta_realtime_current' AND column_name='round3_completion_method') THEN RAISE EXCEPTION 'missing column not restored'; END IF; END \$\$;"
+  deploy:
+    needs: regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: tonest-meta-deploy-main
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy private camp-directory binding
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: 5fa38cebad5fe848d09511005fccae1c
+          wranglerVersion: '4'
+          command: deploy --config workers/coupang-camps/wrangler.toml --keep-vars
+      - name: Deploy collector with schema safety gate
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: 5fa38cebad5fe848d09511005fccae1c
+          wranglerVersion: '4'
+          command: deploy --config workers/meta-collector/wrangler.toml --keep-vars ${{ inputs.schema_applied && '--var REALTIME_SCHEMA_READY:2026-10-09-night3' || '' }}
+      - name: Verify deployed version without accessing production table data
+        run: |
+          python - <<'PYVERIFY'
+          import json, urllib.request
+          with urllib.request.urlopen('https://meta-direct-poc.tonest-admin.workers.dev/health',timeout=30) as r:
+              data=json.load(r)
+          assert data.get('version') == '2026-10-09-night3', data
+          print(json.dumps({k:data.get(k) for k in ['service','version','schemaReady','maroowellApiConfigured']}))
+          PYVERIFY
