@@ -175,7 +175,7 @@ function openMetaModal(){$("metaModalBackdrop").classList.add("open");$("metaMod
 async function closeMetaModal(){$("metaModalBackdrop").classList.remove("open");$("metaModalBackdrop").setAttribute("aria-hidden","true");$("metaFrame").removeAttribute("srcdoc");$("metaFrame").src="about:blank";await loadCollectorState();await queryAll()}
 function bind(){$("logoutBtn").onclick=logout;$("queryBtn").onclick=queryAll;$("collectorBtn").onclick=collectorClick;$("collectorToggleBtn").onclick=toggleCollector;$("collectNowBtn").onclick=collectNow;$("metaLoginBtn").onclick=openMetaModal;document.querySelectorAll(".waveBtn").forEach(b=>b.onclick=()=>{S.wave=b.dataset.wave;document.querySelectorAll(".waveBtn").forEach(x=>x.classList.toggle("active",x===b));S.camps=buildCamps();S.selected.clear();renderAll()});document.querySelectorAll(".autoBtn").forEach(b=>b.onclick=()=>{S.auto=Number(b.dataset.min||0);restartAuto();setStatus(S.auto?`자동 새로고침 ${S.auto}분 간격으로 설정했습니다.`:"자동 새로고침을 껐습니다.")});document.querySelectorAll("[data-copy-section]").forEach(b=>b.onclick=()=>copySection(b.dataset.copySection,b.dataset.copyName,b));document.addEventListener("keydown",e=>{if(e.key==="Escape"&&S.selected.size){S.selected.clear();renderCamps();renderDrivers()}else if(e.key==="Escape"&&$("metaModalBackdrop").classList.contains("open"))closeMetaModal()});$("metaModalClose").onclick=closeMetaModal;$("metaModalBackdrop").onclick=e=>{if(e.target===$("metaModalBackdrop"))closeMetaModal()};$("metaStartLoginBtn").onclick=()=>metaAction("/login-send-code",true);$("metaTestBtn").onclick=()=>metaAction("/test-db");$("metaFrameBlankBtn").onclick=()=>{$("metaFrame").src="about:blank"}}
 async function boot(){bind();try{if(!(await auth()))return;await queryAll();restartAuto()}catch(e){console.error(e);$("userPill").className="pill err user";$("userPill").textContent="접근 불가";setStatus(esc(e?.message||String(e)),true);$("queryBtn").disabled=true}}
-const UI_VERSION='2026-10-09-direct-toggle-v1';
+const UI_VERSION='2026-10-10-chunwoo-all-batch-v5';
 const stableKey=v=>String(v??'').trim().toLowerCase();
 function doneAt(r){
   const expected=r.wave==='WAVE1'?3:2,round=Number(r.current_round||r.actual_rounds||1);
@@ -185,7 +185,7 @@ function isStarted(r){return !!r.scan_started_at||Number(r.delivery_scanned)>0||
 function dedupeRows(rows){
   const map=new Map();for(const row of rows){
     const id=row.driver_pk!=null?'pk:'+row.driver_pk:row.coupang_id?'id:'+stableKey(row.coupang_id):'key:'+stableKey(row.meta_worker_key||row.driver_name);
-    const key=row.batch_id+'|'+id,old=map.get(key);
+    const key=row.batch_id+'|'+(String(row.meta_worker_key||'').startsWith('camp:')?String(row.camp_code||row.camp_name||'')+'|':'')+id,old=map.get(key);
     if(!old||String(row.last_seen_at||'')>String(old.last_seen_at||'')||String(row.last_seen_at||'')===String(old.last_seen_at||'')&&Number(row.delivery_total)>Number(old.delivery_total))map.set(key,row);
   }return [...map.values()];
 }
@@ -284,7 +284,12 @@ async function queryAll(){
     if(S.schema?.ready===false){setStatus(esc(schemaText(S.schema)),true);return;}
     const activeStatuses=['collecting','completion_candidate','overdue','error','paused'];
     const dates=uniq([activeDate('WAVE1'),activeDate('WAVE2')]);
-    const batches=(await readAll('meta_realtime_batch','id,schedule_date,meta_work_date,camp_code,camp_name,wave,status,worker_count,last_polled_at,next_poll_at,last_error,work_completed_at,visible_until,expected_rounds,metrics_status,metrics_close_at,metrics_closed_at,finalized_at,updated_at',q=>q.in('status',[...activeStatuses,'finalized']).in('schedule_date',dates))).filter(batchCurrent);
+    const rawBatches=(await readAll('meta_realtime_batch','id,schedule_date,meta_work_date,camp_code,camp_name,wave,status,worker_count,last_polled_at,next_poll_at,last_error,work_completed_at,visible_until,expected_rounds,metrics_status,metrics_close_at,metrics_closed_at,finalized_at,updated_at',q=>q.in('status',[...activeStatuses,'finalized']).in('schedule_date',dates))).filter(batchCurrent);
+    // CHUNWOO-style __ALL__: preserve old per-camp snapshots until the new
+    // aggregate has actually collected workers. Never double count both.
+    const aggregatedReady=new Set(rawBatches.filter(b=>b.camp_code==='__ALL__' && b.last_polled_at && Number(b.worker_count)>0)
+      .map(b=>`${b.schedule_date}|${b.wave}`));
+    const batches=rawBatches.filter(b=>b.camp_code==='__ALL__'||!aggregatedReady.has(`${b.schedule_date}|${b.wave}`));
     const active=batches.filter(b=>b.status!=='finalized'),ids=batches.map(b=>b.id),activeIds=active.map(b=>b.id);
     const base='id,batch_id,schedule_date,meta_worker_key,driver_pk,camp_code,camp_name,wave,coupang_id,driver_name,scheduled_routes,actual_routes,extra_routes,delivery_assigned,delivery_scanned,delivery_completed,delivery_impossible,delivery_pdd_miss,delivery_total,delivery_complete_rate,return_pending,return_collected,return_uncollected,return_uncollected_raw,return_absent_raw,return_total,return_attempt_rate,return_collection_rate,freshbag_pending,freshbag_collected,freshbag_uncollected,freshbag_total,freshbag_attempt_rate,freshbag_collection_rate,scan_started_at,delivery_started_at,round1_delivery_started_at,round2_scan_started_at,round2_delivery_started_at,round3_scan_started_at,round3_delivery_started_at,round3_completed_at,expected_rounds,work_completed_at,all_completed_at,last_seen_at,all_done,dawn_miss,fresh_miss,raw_payload,fresh_delivery_assigned,fresh_delivery_scanned,fresh_delivery_completed,fresh_delivery_impossible,fresh_delivery_pdd_miss,fresh_delivery_total,fresh_delivery_complete_rate';
     const byIds=(table,cols,list)=>list.length?readAll(table,cols,q=>q.in('batch_id',list)):Promise.resolve([]);
