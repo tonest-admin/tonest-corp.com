@@ -20,7 +20,7 @@ for account in accounts:
     print('WORKERS', ', '.join(w['id'] for w in workers))
     for w in workers:
         name = w['id']
-        if 'meta' not in name.lower(): continue
+        if name not in ['meta-direct-poc','coupang-camps']: continue
         prefix = '/accounts/'+aid+'/workers/scripts/'+name
         settings = data(prefix+'/settings')
         safe = {'account_id':aid, 'name':name, 'compatibility_date':settings.get('compatibility_date'), 'bindings':[{'name':b.get('name'),'type':b.get('type'), **({'text':b.get('text')} if b.get('name') in ['SUPABASE_URL','MAROOWELL_API_BASE'] else {})} for b in settings.get('bindings',[])]}
