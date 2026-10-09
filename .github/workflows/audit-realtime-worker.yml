@@ -16,6 +16,8 @@ jobs:
         env:
           CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: python tools/audit-realtime-worker.py
+      - name: Export parity reference sources
+        run: python tools/export-parity-sources.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
