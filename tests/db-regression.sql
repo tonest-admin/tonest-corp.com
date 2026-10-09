@@ -13,6 +13,13 @@ begin
 exception when others then
   if sqlerrm <> 'META final round is not complete' then raise; end if;
 end;
+update public.meta_realtime_current set current_round=3 where id=r;
+begin
+  perform public.meta_finalize_realtime_batch(b);
+  raise exception 'TEST: finalization without third delivery was not blocked';
+exception when others then
+  if sqlerrm <> 'META final round is not complete' then raise; end if;
+end;
 update public.meta_realtime_current set current_round=3,round3_delivery_started_at='2020-01-02 02:00',
  round3_completed_at='2020-01-02 03:00',work_completed_at='2020-01-02 03:00',all_done=true where id=r;
 update public.meta_realtime_batch set work_completed_at='2020-01-02 03:00' where id=b;

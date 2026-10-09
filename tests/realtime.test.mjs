@@ -65,3 +65,20 @@ test('stable driver identity is not double counted after a META key change',()=>
  {batch_id:'b',driver_pk:1,meta_worker_key:'new',delivery_total:98,last_seen_at:'2026-10-09T20:01:00'}];
  assert.equal(R.dedupeRows(rows).length,1);assert.equal(R.dedupeRows(rows)[0].delivery_total,98);
 });
+
+test('actual dashboard script builds camps and renders three-round synthetic drivers',async()=>{
+  const {readFileSync}=await import('node:fs');const vm=await import('node:vm');
+  const html=readFileSync(new URL('../public/realtime',import.meta.url),'utf8');
+  const code=[...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)].map(m=>m[1]).join('\n')
+    .replace('boot();','globalThis.dashboardTest={S,buildCamps,renderAll};');
+  const elements=new Map();const element=id=>{if(!elements.has(id))elements.set(id,{textContent:'',innerHTML:'',className:'',classList:{toggle(){}},querySelectorAll:()=>[]});return elements.get(id)};
+  const context={window:{TnRealtime:R},document:{getElementById:element},localStorage:{getItem:()=>null},console};
+  vm.createContext(context);new vm.Script(code).runInContext(context);
+  const t=context.dashboardTest;
+  t.S.rows=[1,2,3].map(round=>({batch_id:'test',wave:'WAVE1',camp_name:'TEST',driver_name:'D'+round,schedule_date:'2026-10-09',delivery_total:100,delivery_completed:round===3?100:50,delivery_scanned:round===3?0:50,scan_started_at:'2026-10-09T20:00',current_round:round,round3_delivery_started_at:round===3?'2026-10-10T02:00':null,work_completed_at:round===3?'2026-10-10T05:00':null}));
+  t.S.camps=t.buildCamps();assert.equal(t.S.camps.length,1);assert.equal(t.S.camps[0].rows.length,3);
+  t.renderAll();const rendered=element('driverBody').innerHTML;
+  assert.equal((rendered.match(/class="driverCard"/g)||[]).length,3);
+  assert.equal((rendered.match(/class="doneBadge"/g)||[]).length,1);
+  assert.equal((rendered.match(/3차배송/g)||[]).length,3);
+});

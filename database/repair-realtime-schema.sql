@@ -1058,7 +1058,8 @@ begin
   end if;
   if exists(select 1 from public.meta_realtime_current c where c.batch_id=p_batch_id
     and (c.scan_started_at is not null or c.delivery_scanned>0 or c.delivery_completed>0)
-    and (c.work_completed_at is null or c.current_round < case when c.wave='WAVE1' then 3 else 2 end)) then
+    and (c.work_completed_at is null or c.current_round < case when c.wave='WAVE1' then 3 else 2 end
+      or (case when c.wave='WAVE1' then c.round3_delivery_started_at else c.round2_delivery_started_at end) is null)) then
     raise exception 'META final round is not complete';
   end if;
   -- Bring the latest fresh snapshot into the same transaction as finalization.
