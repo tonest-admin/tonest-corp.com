@@ -20,5 +20,5 @@ jobs:
         if: always()
         with:
           name: tonest-collector-audit
-          path: .audit/
+          path: audit-output/
           retention-days: 3

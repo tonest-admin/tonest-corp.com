@@ -1,5 +1,5 @@
 import os, json, pathlib, urllib.request, urllib.error
-out = pathlib.Path('.audit')
+out = pathlib.Path('audit-output')
 out.mkdir(exist_ok=True)
 base = 'https://api.cloudflare.com/client/v4'
 def get(path):
@@ -15,6 +15,7 @@ accounts = data('/accounts')
 for account in accounts:
     aid = account['id']
     print('ACCOUNT', aid)
+    print('SUBDOMAIN', json.dumps(data('/accounts/'+aid+'/workers/subdomain')))
     workers = data('/accounts/'+aid+'/workers/scripts')
     print('WORKERS', ', '.join(w['id'] for w in workers))
     for w in workers:
