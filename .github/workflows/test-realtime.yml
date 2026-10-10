@@ -40,6 +40,15 @@ jobs:
           pathlib.Path('/tmp/tonest-realtime.js').write_text('\n'.join(re.findall(r'<script(?:\s[^>]*)?>(.*?)</script>',html,re.S)))
           PY
           node --check /tmp/tonest-realtime.js
+      - name: Assert independent collection and heartbeat schedules
+        run: |
+          python - <<'PY'
+          import tomllib,pathlib
+          config=tomllib.loads(pathlib.Path('workers/meta-collector/wrangler.toml').read_text())
+          assert set(config['triggers']['crons'])=={'* * * * *','*/5 * * * *'},config
+          assert config['main']=='entry.js'
+          print('Both schedules registered in Wrangler source configuration')
+          PY
       - name: Validate prior repair SQL in isolated PostgreSQL only
         run: |
           psql -v ON_ERROR_STOP=1 -f tests/db-fixture.sql
@@ -71,9 +80,9 @@ jobs:
               result=subprocess.run(['curl','--fail','--silent','--show-error','--max-time','30','https://meta-direct-poc.tonest-admin.workers.dev/health'],capture_output=True,text=True)
               if result.returncode==0:
                   data=json.loads(result.stdout)
-                  if data.get('version')=='2026-10-09-direct-toggle-v1': break
+                  if data.get('version')=='2026-10-10-chunwoo-all-batch-v6-keepalive': break
               if attempt<2: time.sleep(5)
-          assert data.get('version')=='2026-10-09-direct-toggle-v1',data
+          assert data.get('version')=='2026-10-10-chunwoo-all-batch-v6-keepalive',data
           print(json.dumps({k:data.get(k) for k in ['version','schemaReady','schemaCheck','schemaIssueCount','collectorPaused','metaSessionStatus']},ensure_ascii=False))
           if data.get('schemaReady') is False:
               print('::warning::Required DB columns are not readable. Use the authenticated dashboard status button for details.')
