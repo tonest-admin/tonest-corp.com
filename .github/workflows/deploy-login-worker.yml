@@ -1,80 +1,27 @@
-name: Test TO:NEST realtime parity
+name: Deploy TO:NEST login worker
 on:
   push:
     branches: [main]
-    paths: ['workers/**', 'public/realtime*', 'database/**', 'tests/**', '.github/workflows/test-realtime.yml']
+    paths:
+      - 'login-worker.js'
+      - 'wrangler.toml'
+      - 'public/**'
+      - '.github/workflows/deploy-login-worker.yml'
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: deploy-tonest-login-main
+  cancel-in-progress: true
 jobs:
-  regression:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    services:
-      postgres:
-        image: postgres:17
-        env:
-          POSTGRES_PASSWORD: ci-only-password
-          POSTGRES_DB: realtime_test
-        ports: ['5432:5432']
-        options: --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
-    env:
-      PGHOST: localhost
-      PGPORT: 5432
-      PGUSER: postgres
-      PGPASSWORD: ci-only-password
-      PGDATABASE: realtime_test
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - name: Run existing and collection-control regression tests
-        run: node --test
-      - name: Check complete Worker and dashboard syntax
-        run: |
-          node --check workers/meta-collector/entry.js
-          python - <<'PY'
-          import pathlib,re
-          html=pathlib.Path('public/realtime').read_text()
-          pathlib.Path('/tmp/tonest-realtime.js').write_text('\n'.join(re.findall(r'<script(?:\s[^>]*)?>(.*?)</script>',html,re.S)))
-          PY
-          node --check /tmp/tonest-realtime.js
-      - name: Validate prior repair SQL in isolated PostgreSQL only
-        run: |
-          psql -v ON_ERROR_STOP=1 -f tests/db-fixture.sql
-          psql -v ON_ERROR_STOP=1 -f database/repair-realtime-schema.sql
-          psql -v ON_ERROR_STOP=1 -f database/repair-realtime-schema.sql
-          psql -v ON_ERROR_STOP=1 -f tests/db-regression.sql
   deploy:
-    needs: regression
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    concurrency:
-      group: tonest-meta-deploy-main
-      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
-      - name: Deploy complete collector; preserve existing secrets and bindings
+      - name: Deploy login worker and static assets
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: 5fa38cebad5fe848d09511005fccae1c
-          wranglerVersion: '4.149.0'
-          command: deploy --config workers/meta-collector/wrangler.toml --keep-vars
-      - name: Verify deployed version and report actual column-check result
-        run: |
-          python - <<'PY'
-          import json,subprocess,time
-          data={}
-          for attempt in range(3):
-              result=subprocess.run(['curl','--fail','--silent','--show-error','--max-time','30','https://meta-direct-poc.tonest-admin.workers.dev/health'],capture_output=True,text=True)
-              if result.returncode==0:
-                  data=json.loads(result.stdout)
-                  if data.get('version')=='2026-10-10-chunwoo-all-batch-v5': break
-              if attempt<2: time.sleep(5)
-          assert data.get('version')=='2026-10-10-chunwoo-all-batch-v5',data
-          print(json.dumps({k:data.get(k) for k in ['version','schemaReady','schemaCheck','schemaIssueCount','collectorPaused','metaSessionStatus']},ensure_ascii=False))
-          if data.get('schemaReady') is False:
-              print('::warning::Required DB columns are not readable. Use the authenticated dashboard status button for details.')
-          PY
+          wranglerVersion: '4'
+          command: deploy --config wrangler.toml --keep-vars
