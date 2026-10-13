@@ -1,11 +1,13 @@
-import { advanceProgress, expectedRounds } from "./rounds.mjs";
+// Complete standalone replacement; no local module imports required.
+// Version: 2026-10-10-camp-fairness-v3
 /**
  * TO:NEST META realtime collector - FULL
  *
  * 역할
  *  - Coupang META 로그인 + SMS MFA
  *  - META 세션 쿠키를 TO:NEST Supabase meta_backend_state 에 저장
- *  - tonest_schedule 기준으로 현재 운행 캠프/주야간 배치 자동 생성
+ *  - META camps + driver directory create batches; schedules are optional
+ *  - Fair per-camp polling, diagnostics for empty META responses, stable session state
  *  - MAROOWELL 공용 캠프 API에서 META camp code 조회
  *  - META 배송/반품/프레시백/신선배송 상태 1분 수집
  *  - meta_realtime_current / history / final 관리
@@ -14,10 +16,10 @@ import { advanceProgress, expectedRounds } from "./rounds.mjs";
  * Cloudflare ENV / Secret
  *  Required:
  *    SUPABASE_URL
- *    SUPABASE_SERVICE_ROLE_KEY   (or SUPABASE_SECRET_KEY)
+ *    SUPABASE_SERVICE_ROLE_KEY / SUPABASE_SERVICE_ROLE / SUPABASE_SECRET_KEY
  *    META_ID
  *    META_PW
- *    MAROOWELL_API_KEY
+ *    CAMP_DIRECTORY service binding OR MAROOWELL_API_KEY
  *  Optional:
  *    MAROOWELL_API_BASE
  */
@@ -25,6 +27,7 @@ import { advanceProgress, expectedRounds } from "./rounds.mjs";
 const FLY_REALTIME = "https://fly.coupang.com/ui/dashboard/realtime";
 const META_WORKER_URL = "https://fly.coupang.com/realtime-dashboard/workers/work-status/search";
 const META_CAMP_URL = "https://fly.coupang.com/realtime-dashboard/camps/work-status/search";
+const MY_VENDOR_URL = "https://fly.coupang.com/v1/my-vendor";
 const AUTH_START = "https://fly.coupang.com/oauth2/authorization/keycloak";
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36";
 const DEFAULT_MAROOWELL_API_BASE = "https://purple-river-0717.brain-0f6.workers.dev";
@@ -62,16 +65,14 @@ const esc = s => String(s ?? "")
   .replace(/'/g, "&#39;");
 
 function requireConfig(env) {
-  const missing = [];
-  if (!text(env.SUPABASE_URL)) missing.push("SUPABASE_URL");
-  if (!serviceKey(env)) missing.push("SUPABASE_SERVICE_ROLE_KEY");
-  // Camp credentials are checked only when resolving the camp directory.
-  if (missing.length) throw new Error(`Missing env: ${missing.join(", ")}`);
+  const missing=[];
+  if(!text(env.SUPABASE_URL))missing.push('SUPABASE_URL');
+  if(!serviceKey(env))missing.push('SUPABASE_SERVICE_ROLE_KEY / SUPABASE_SERVICE_ROLE / SUPABASE_SECRET_KEY');
+  if(!env.CAMP_DIRECTORY&&!text(env.MAROOWELL_API_KEY))missing.push('CAMP_DIRECTORY binding / MAROOWELL_API_KEY');
+  if(missing.length)throw new Error('Missing configuration: '+missing.join(', '));
 }
 
-function serviceKey(env) {
-  return text(env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_SERVICE_ROLE || env.SUPABASE_SECRET_KEY);
-}
+function serviceKey(env){return text(env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_SECRET_KEY || env.SUPABASE_SERVICE_ROLE);}
 
 function supabaseUrl(env) {
   return text(env.SUPABASE_URL).replace(/\/+$/, "");
@@ -161,6 +162,9 @@ function canonicalIdentity(cid, name, fallback) {
 }
 
 function rowIdentity(r) {
+  // Aggregate mode contains multiple real camps under one batch. Match the
+  // previous reading by its camp-scoped key, never by a cross-camp driver PK.
+  if (text(r?.meta_worker_key).startsWith('camp:')) return text(r.meta_worker_key);
   return r?.driver_pk != null
     ? `pk:${Number(r.driver_pk)}`
     : canonicalIdentity(r?.coupang_id, r?.driver_name, r?.meta_worker_key);
@@ -179,13 +183,37 @@ function infoWave(wave) {
   return text(wave);
 }
 
-function sourceCampCode(src) {
-  const w = src?.workerInfo || {};
-  for (const k of ["campCode", "sourceCampCode", "workCampCode"]) {
-    const v = src?.[k] ?? w?.[k];
-    if (text(v)) return text(v).toUpperCase();
+// Same nested META payload walk used by the working CHUNWOO collector.
+function deepValueByKeys(root, keys, maxDepth=5) {
+  const wanted=new Set(keys.map(k=>String(k).toLowerCase()));
+  const queue=[{v:root,d:0}],seen=new Set();
+  while(queue.length) {
+    const {v,d}=queue.shift();
+    if(!v||typeof v!=='object'||seen.has(v))continue;
+    seen.add(v);
+    for(const [k,child] of Object.entries(v)) {
+      if(wanted.has(k.toLowerCase())&&child!=null&&typeof child!=='object'&&text(child))return child;
+    }
+    if(d<maxDepth)for(const child of Object.values(v))if(child&&typeof child==='object')queue.push({v:child,d:d+1});
   }
   return null;
+}
+function sourceCampCode(src) {
+  const value=deepValueByKeys(src,['campCode','sourceCampCode','workCampCode','deliveryCampCode','baseCampCode']);
+  return value!=null ? text(value).toUpperCase() : null;
+}
+function campSummaryName(src) {
+  const value=deepValueByKeys(src,['campName','workCampName','sourceCampName','deliveryCampName','baseCampName']);
+  return text(value)||null;
+}
+function resolveSourceCamp(src,index,aggregate) {
+  const code=sourceCampCode(src);
+  const name=campSummaryName(src);
+  const found=(code&&index?.byCode.get(code))||(name&&index?.byName.get(name));
+  if(found)return {code:found.code,name:found.name,sourceCode:code||found.code,mapped:true};
+  // Never silently assign a worker to the synthetic __ALL__ camp.
+  if(aggregate===true)return {code:code||'META_UNMAPPED',name:name||code||'META 캠프 미분류',sourceCode:code,mapped:false};
+  return {code:code||'META_UNMAPPED',name:name||code||'META 캠프 미분류',sourceCode:code,mapped:false};
 }
 
 function deliveryMetric(s = {}) {
@@ -195,7 +223,7 @@ function deliveryMetric(s = {}) {
   const impossible = +s.impossibleCount || 0;
   const pdd = +s.pddMissCount || 0;
   const total = assigned + scanned + completed + impossible + pdd;
-  const sourceRate = Number(s.completedRatio);
+  const sourceRate = s.completedRatio==null?NaN:Number(s.completedRatio);
   const rate = Number.isFinite(sourceRate) ? sourceRate : (total > 0 ? pct(completed, total) : 0);
   return { assigned, scanned, completed, impossible, pdd, total, rate };
 }
@@ -219,20 +247,15 @@ function collectionMetric(s = {}, includeAbsent = false) {
 // Supabase REST helpers
 // ============================================================================
 
-async function sb(env, path, init = {}) {
-  requireConfig(env);
-  const key = serviceKey(env);
-  const headers = new Headers(init.headers || {});
-  headers.set("apikey", key);
-  headers.set("authorization", `Bearer ${key}`);
-  headers.set("accept", "application/json");
-  if (init.body && !headers.has("content-type")) headers.set("content-type", "application/json");
-
-  const response = await fetch(`${supabaseUrl(env)}/rest/v1/${path}`, { ...init, headers });
-  const bodyText = await response.text();
-  if (!response.ok) throw new Error(`Supabase ${response.status} ${path}: ${bodyText.slice(0, 800)}`);
-  if (!bodyText) return null;
-  try { return JSON.parse(bodyText); } catch { return bodyText; }
+async function sb(env,path,init={}){
+  const key=serviceKey(env);if(!key||!supabaseUrl(env))throw new Error('Supabase configuration is missing');
+  const headers=new Headers(init.headers||{});headers.set('apikey',key);headers.set('accept','application/json');
+  if(key.startsWith('eyJ'))headers.set('authorization','Bearer '+key);
+  if(init.body&&!headers.has('content-type'))headers.set('content-type','application/json');
+  const response=await fetch(supabaseUrl(env)+'/rest/v1/'+path,{...init,headers,signal:init.signal||AbortSignal.timeout(15000)});
+  const raw=await response.text();let body=null;try{body=raw?JSON.parse(raw):null;}catch{}
+  if(!response.ok)throw Object.assign(new Error('Supabase '+response.status+' '+path.split('?')[0]+': '+(body?.message||raw.slice(0,250))),{status:response.status,code:body?.code});
+  return body;
 }
 
 const sbGet = (env, path) => sb(env, path);
@@ -276,16 +299,11 @@ async function maroFetch(env, path) {
   return data ?? {};
 }
 
-async function getMaroCampRows(env, camp = "") {
-  if (env.CAMP_DIRECTORY) return await env.CAMP_DIRECTORY.listCamps(camp);
-  const p = new URLSearchParams();
-  if (text(camp)) p.set("camp", text(camp));
-  p.set("limit", "1000");
-  const payload = await maroFetch(env, `/api/v1/camps?${p.toString()}`);
-  if (Array.isArray(payload?.rows)) return payload.rows;
-  if (Array.isArray(payload?.data)) return payload.data;
-  if (Array.isArray(payload)) return payload;
-  return [];
+async function getMaroCampRows(env,camp=''){
+  if(env.CAMP_DIRECTORY?.listCamps){const rows=await env.CAMP_DIRECTORY.listCamps(camp);return Array.isArray(rows)?rows:[];}
+  const params=new URLSearchParams({limit:'1000'});if(text(camp))params.set('camp',text(camp));
+  const payload=await maroFetch(env,'/api/v1/camps?'+params);
+  return Array.isArray(payload)?payload:(payload.rows||payload.data||payload.items||[]);
 }
 
 function metaCampCandidates(codes) {
@@ -309,22 +327,8 @@ async function loadCampMeta(env, camp) {
   return { rows, rawCodes, codes, campCode };
 }
 
-async function verificationCampCodes(env) {
-  const kp = kstParts();
-  const wave = kp.hour < 12 ? "WAVE1" : "WAVE2";
-  const date = wave === "WAVE1" && kp.hour < 12 ? addDate(kp.date, -1) : kp.date;
-  const schedules = await sbGet(env,
-    `tonest_schedule?select=camp&schedule_date=eq.${date}&wave=eq.${wave}&is_active=eq.true&limit=50`
-  ).catch(() => []);
-  const camps = uniq((schedules || []).map(r => r.camp));
-  const codes = [];
-  for (const camp of camps.slice(0, 5)) {
-    const m = await loadCampMeta(env, camp).catch(() => ({ codes: [] }));
-    codes.push(...(m.codes || []));
-  }
-  if (codes.length) return uniq(codes).slice(0, 30);
-  const rows = await getMaroCampRows(env, "").catch(() => []);
-  return metaCampCandidates(uniq(rows.map(r => r?.code))).slice(0, 30);
+async function verificationCampCodes(env){
+  const rows=await loadMaster(env);return metaCampCandidates(uniq(rows.map(r=>r.code||r.campCode)));
 }
 
 // ============================================================================
@@ -363,55 +367,57 @@ function absorbSetCookies(map, response) {
   }
 }
 
-async function metaPage(cookies, url, payload) {
-  const response = await fetch(url, {
-    method: "POST",
-    redirect: "manual",
-    signal: AbortSignal.timeout(20000),
-    headers: {
-      accept: "application/json",
-      "accept-language": "ko-KR",
-      "content-type": "application/json;charset=UTF-8",
-      origin: "https://fly.coupang.com",
-      referer: FLY_REALTIME,
-      "user-agent": UA,
-      "x-coupang-accept-language": "ko-KR",
-      "x-requested-with": "XMLHttpRequest",
-      cookie: cookieHeader(cookies)
-    },
-    body: JSON.stringify(payload)
-  });
-  absorbSetCookies(cookies, response);
-  const raw = await response.text();
-  let body = null;
-  try { body = JSON.parse(raw); } catch {}
-  const success = response.status === 200 && (
-    body?.message === "SUCCESS" ||
-    Array.isArray(body?.data?.content) ||
-    Array.isArray(body?.content) ||
-    Array.isArray(body?.data?.data?.content)
-  );
-  return { status: response.status, raw, body, success };
+async function metaPage(cookies,url,payload){
+  const response=await fetch(url,{method:'POST',redirect:'manual',signal:AbortSignal.timeout(20000),headers:{
+    accept:'application/json','accept-language':'ko-KR','content-type':'application/json;charset=UTF-8',
+    origin:'https://fly.coupang.com',referer:FLY_REALTIME,'user-agent':UA,
+    'x-coupang-accept-language':'ko-KR','x-requested-with':'XMLHttpRequest',cookie:cookieHeader(cookies)},body:JSON.stringify(payload)});
+  absorbSetCookies(cookies,response);
+  const raw=await response.text();let body=null;try{body=JSON.parse(raw);}catch{}
+  const content=Array.isArray(body?.data?.content)||Array.isArray(body?.content)||Array.isArray(body?.data?.data?.content);
+  return {status:response.status,raw,body,success:response.status===200&&content};
 }
-
-async function metaPost(cookies,url,payload) {
-  const first = await metaPage(cookies,url,payload);
-  if (!first.success || url !== META_WORKER_URL) return first;
-  const hasRows = Array.isArray(first.body?.data?.content) || Array.isArray(first.body?.content) || Array.isArray(first.body?.data?.data?.content);
-  if (!hasRows) throw new Error('META 502: unexpected worker response shape');
-  const rows = [...metaContent(first.body)];
-  let response = first;
-  for (let page=1;page<=50;page++) {
-    const info=response.body?.data?.data || response.body?.data || response.body;
-    if (info?.last===true || (Number.isFinite(info?.totalPages) && page>=info.totalPages) || metaContent(response.body).length<payload.size) break;
-    if(page===50) throw new Error('META pagination safety limit exceeded; no partial snapshot saved');
-    response=await metaPage(cookies,url,{...payload,page});
-    if(!response.success) return response;
-    const content=metaContent(response.body);
-    if(!Array.isArray(response.body?.data?.content)&&!Array.isArray(response.body?.content)&&!Array.isArray(response.body?.data?.data?.content))throw new Error('META 502: invalid paginated response');
-    rows.push(...content);
+async function metaPost(cookies,url,payload){
+  const first=await metaPage(cookies,url,payload);if(!first.success)return first;
+  const rows=[...metaContent(first.body)];let response=first;
+  for(let page=1;page<=10;page++){
+    const info=response.body?.data?.data||response.body?.data||response.body;
+    if(info?.last===true||(Number.isFinite(info?.totalPages)&&page>=info.totalPages)||metaContent(response.body).length<payload.size)break;
+    if(page===10)throw new Error('META_PAGE_LIMIT: 10 pages per 20 camp-code chunk; refused partial worker update');
+    response=await metaPage(cookies,url,{...payload,page});if(!response.success)return response;
+    rows.push(...metaContent(response.body));
   }
   return {...first,body:{data:{content:rows}}};
+}
+
+async function metaGet(cookies,url) {
+  const response=await fetch(url,{method:'GET',redirect:'manual',signal:AbortSignal.timeout(20000),headers:{
+    accept:'application/json','accept-language':'ko-KR',referer:FLY_REALTIME,'user-agent':UA,
+    'x-coupang-accept-language':'ko-KR','x-requested-with':'XMLHttpRequest',cookie:cookieHeader(cookies)}});
+  absorbSetCookies(cookies,response);
+  const raw=await response.text();let body=null;try{body=JSON.parse(raw);}catch{}
+  if([301,302,303,307,308,401,403].includes(response.status)||!/json/i.test(response.headers.get('content-type')||'')&&body==null){
+    throw Object.assign(new Error('META_AUTH_EXPIRED or response not JSON /v1/my-vendor HTTP '+response.status),{metaAuthRequired:true,status:response.status});
+  }
+  if(response.status!==200)throw Object.assign(new Error('META my-vendor '+response.status+': '+raw.slice(0,250)),{status:response.status});
+  return body;
+}
+async function fetchMyVendor(cookies){
+  const body=await metaGet(cookies,MY_VENDOR_URL);
+  const data=body?.data||{};
+  const codes=uniq(Array.isArray(data.contractedCampCodes)?data.contractedCampCodes:[]).map(s=>s.toUpperCase());
+  if(!codes.length)throw new Error('META /v1/my-vendor contractedCampCodes EMPTY: check vendor scope');
+  return {vendorName:text(data.name),vendorCode:text(data.vendorCode),contractedCampCodes:codes};
+}
+async function fetchMetaByCodeChunks(cookies,url,codes,wave,workDate,pddTime=null){
+  const rows=[];const used=uniq(codes);
+  // CHUNWOO's 20-code chunks prevent mixed-vendor and invalid camp aliases.
+  for(let i=0;i<used.length;i+=20){
+    const response=await metaPost(cookies,url,workerPayload(used.slice(i,i+20),wave,workDate,pddTime));
+    if(!response.success)throw metaFailure(response,'META '+url.split('/').at(-1));
+    rows.push(...metaContent(response.body));
+  }
+  return {success:true,status:200,body:{data:{content:rows}},count:rows.length};
 }
 
 function workerPayload(campCodes, wave, workDate, pddTime = null) {
@@ -448,11 +454,7 @@ async function saveSession(env, cookies, status = "active", http = 200, error = 
 // Schedule / driver mapping
 // ============================================================================
 
-async function loadDriverDirectory(env) {
-  return await sbGet(env,
-    "tonest_info?select=pk_id,person_name,coupang_id,camp_code,wave,is_resigned"
-  ) || [];
-}
+async function loadDriverDirectory(env){return await optionalGet(env,'tonest_info?select=pk_id,person_name,coupang_id,camp_code,wave,is_resigned&order=pk_id.asc&limit=1000');}
 
 function resolveDriverPk(directory, cid, name, camp, wave) {
   const id = text(cid).toLowerCase();
@@ -490,21 +492,23 @@ function resolveDriverPk(directory, cid, name, camp, wave) {
   return null;
 }
 
-async function loadSchedule(env, date, wave, camp) {
-  return await sbGet(env,
-    `tonest_schedule?select=driver_pk,route_label,driver_name,driver_display_name,driver_owner_name,driver_export_name,driver_coupang_id,driver_account_type,row_order&schedule_date=eq.${date}&wave=eq.${wave}&camp=eq.${encodeURIComponent(camp)}&is_active=eq.true&order=row_order.asc`
+async function loadSchedule(env, date, wave, camp=null) {
+  // For the __ALL__ batch fetch the entire day's schedule once and match
+  // each META worker against schedules of its resolved real camp.
+  return await optionalGet(env,
+    `tonest_schedule?select=camp,driver_pk,route_label,driver_name,driver_display_name,driver_owner_name,driver_export_name,driver_coupang_id,driver_account_type,row_order`+
+    `&schedule_date=eq.${date}&wave=eq.${wave}`+
+    (camp?`&camp=eq.${encodeURIComponent(camp)}`:'')+
+    `&is_active=eq.true&order=row_order.asc&limit=1000`
   ) || [];
 }
 
-function scheduleMatch(rows, cid, name) {
-  const id = text(cid).toLowerCase();
-  const dn = text(name);
-  let hit = rows.filter(r => id && text(r.driver_coupang_id).toLowerCase() === id);
-  if (!hit.length && dn) {
-    hit = rows.filter(r => [r.driver_display_name, r.driver_name, r.driver_owner_name, r.driver_export_name]
-      .some(x => text(x) === dn));
-  }
-  return hit;
+function scheduleMatch(rows,cid,name){
+  const id=text(cid).toLowerCase(),dn=text(name);
+  if(id)return rows.filter(r=>text(r.driver_coupang_id).toLowerCase()===id);
+  const hits=rows.filter(r=>dn&&[r.driver_display_name,r.driver_name,r.driver_owner_name,r.driver_export_name].some(x=>text(x)===dn));
+  const ids=uniq(hits.map(r=>r.driver_pk!=null?'pk:'+r.driver_pk:text(r.driver_coupang_id)||dn));
+  return ids.length===1?hits:[];
 }
 
 function scheduledRouteMatches(actual, scheduled) {
@@ -566,60 +570,7 @@ function currentMatchesPerson(r, p) {
 // Batch lifecycle
 // ============================================================================
 
-async function ensureBatches(env) {
-  const kp = kstParts();
-  const targets = [];
-  if (kp.hour >= 7) targets.push({ date: kp.date, wave: "WAVE2" });
-  if (kp.hour >= 20) targets.push({ date: kp.date, wave: "WAVE1" });
-  else if (kp.hour < 12) targets.push({ date: addDate(kp.date, -1), wave: "WAVE1" });
 
-  const result = [];
-  for (const target of targets) {
-    const schedules = await sbGet(env,
-      `tonest_schedule?select=camp&schedule_date=eq.${target.date}&wave=eq.${target.wave}&is_active=eq.true`
-    ) || [];
-
-    for (const camp of uniq(schedules.map(r => r.camp))) {
-      const meta = await loadCampMeta(env, camp);
-      if (!meta.codes.length || !meta.campCode) {
-        result.push({ camp, wave: target.wave, skipped: "no_maroowell_camp_code" });
-        continue;
-      }
-
-      const existing = await sbGet(env,
-        `meta_realtime_batch?select=id,camp_code,meta_camp_codes,status&schedule_date=eq.${target.date}&camp_name=eq.${encodeURIComponent(camp)}&wave=eq.${target.wave}&order=started_at.asc&limit=1`
-      );
-
-      if (existing?.length) {
-        await sbPatch(env, `meta_realtime_batch?id=eq.${existing[0].id}`, {
-          camp_code: meta.campCode,
-          camp_name: camp,
-          meta_camp_codes: meta.codes,
-          ...(existing[0].status !== "finalized" ? {expected_rounds:expectedRounds(target)} : {}),
-          updated_at: nowIso()
-        });
-        result.push({ camp, wave: target.wave, existing: true });
-        continue;
-      }
-
-      await sbPost(env, "meta_realtime_batch", {
-        schedule_date: target.date,
-        meta_work_date: target.wave === "WAVE1" ? addDate(target.date, 1) : target.date,
-        camp_code: meta.campCode,
-        camp_name: camp,
-        wave: target.wave,
-        meta_camp_codes: meta.codes,
-        status: "collecting",
-        expected_rounds: expectedRounds(target),
-        poll_interval_seconds: 60,
-        next_poll_at: nowIso(),
-        updated_at: nowIso()
-      });
-      result.push({ camp, wave: target.wave, created: true });
-    }
-  }
-  return result;
-}
 
 function isActiveBatchDate(batch) {
   const kp = kstParts();
@@ -633,55 +584,72 @@ function isActiveBatchDate(batch) {
   return false;
 }
 
-async function purgeStaleRealtimeRows(env) {
-  // Active-date filtering hides old shifts; only the transactional finalizer deletes current rows.
-  return 0;
+async function purgeStaleRealtimeRows(env){return 0;}
+
+// A failed/unpolled batch must NOT occupy the first N slots forever.
+// The DB records an attempt timestamp for failed requests. For older records,
+// updated_at is the fallback so never-polled camps remain ahead of retries.
+function batchLastAttemptMs(batch) {
+  const last = tsMs(batch.last_polled_at);
+  if (Number.isFinite(last)) return last;
+  const changed = tsMs(batch.updated_at || batch.created_at || batch.started_at);
+  return Number.isFinite(changed) ? changed : 0;
+}
+function batchLeaseActive(batch, at = Date.now()) {
+  const until = tsMs(batch.collector_lock_until);
+  return Number.isFinite(until) && until > at;
+}
+async function dueBatches(env,force=false){
+  const dates=uniq(activeTargets().map(t=>t.date));
+  if(!dates.length)return [];
+  const filter=force?'':('&or=(next_poll_at.is.null,next_poll_at.lte.'+encodeURIComponent(nowIso())+')');
+  const rows=await sbGet(env,'meta_realtime_batch?select=*&camp_code=eq.__ALL__&schedule_date=in.('+dates.join(',')+')&status=in.(collecting,completion_candidate,overdue,error)'+filter+'&order=updated_at.asc&limit=500')||[];
+  return rows.filter(isActiveBatchDate).filter(b=>!batchLeaseActive(b))
+    .sort((a,b)=>batchLastAttemptMs(a)-batchLastAttemptMs(b)
+      ||Number(b.wave==='WAVE1')-Number(a.wave==='WAVE1')
+      ||text(a.camp_name).localeCompare(text(b.camp_name),'ko'));
 }
 
-async function dueBatches(env, force = false) {
-  const states = force
-    ? "status=in.(collecting,completion_candidate,overdue,error)"
-    : `status=in.(collecting,completion_candidate,overdue,error)&or=(next_poll_at.is.null,next_poll_at.lte.${encodeURIComponent(nowIso())})`;
-  const rows = await sbGet(env,
-    `meta_realtime_batch?select=*&${states}&order=schedule_date.asc,started_at.asc`
-  ) || [];
-  return rows.filter(isActiveBatchDate).sort((a,b)=>Number(b.wave === "WAVE1")-Number(a.wave === "WAVE1") || String(a.next_poll_at||"").localeCompare(String(b.next_poll_at||"")));
+function metricsCloseReached(batch){
+  if(batch.metrics_close_at)return Date.now()>=tsMs(batch.metrics_close_at);
+  return Date.now()>=tsMs((batch.wave==='WAVE1'?addDate(batch.schedule_date,1):batch.schedule_date)+'T'+(batch.wave==='WAVE1'?'11:59:00':'23:59:00'));
 }
 
-function metricsCloseReached(batch) {
-  const raw = text(batch?.metrics_close_at).replace(" ", "T");
-  const close = raw ? Date.parse(/[zZ]|[+-]\d\d:\d\d$/.test(raw) ? raw : `${raw}+09:00`) : NaN;
-  if (Number.isFinite(close)) return Date.now() >= close;
-  const day = text(batch.schedule_date);
-  if (!day) return false;
-  const closeDay = batch.wave === 'WAVE1' ? addDate(day,1) : day;
-  const closeTime = batch.wave === 'WAVE1' ? '11:59' : '23:59';
-  return Date.now() >= Date.parse(`${closeDay}T${closeTime}:00+09:00`);
-}
 
-async function storeFreshRows(env, batch, schedule, directory, freshResponse, collectedAt) {
+
+
+
+
+
+
+
+async function storeFreshRows(env, batch, schedule, directory, freshResponse, collectedAt, campIndexMap) {
   if (batch.wave !== "WAVE2" || !freshResponse?.success) return [];
-  const byKey = new Map();
+  const out = [];
   for (const src of metaContent(freshResponse.body)) {
+    const resolved=resolveSourceCamp(src,campIndexMap,batch.camp_code==='__ALL__');
+    const scopedSchedule=schedule.filter(r=>text(r.camp)===resolved.name||text(r.camp)===resolved.code);
     const w = src?.workerInfo || {};
     const metaCid = coupangId(src);
     const name = workerName(src);
     const actualRoutes = uniq((w.workSubRoutes || []).map(normRoute));
-    let matched = scheduleMatch(schedule, metaCid, name);
-    if (!matched.length) matched = scheduleMatchByRoutes(schedule, actualRoutes);
+    let matched = scheduleMatch(scopedSchedule, metaCid, name);
+    if (!matched.length && !metaCid && !name) matched = scheduleMatchByRoutes(scopedSchedule, actualRoutes);
     const realCid = text(matched[0]?.driver_coupang_id || metaCid) || null;
     const mappedName = text(matched[0]?.driver_display_name || matched[0]?.driver_name || matched[0]?.driver_owner_name || matched[0]?.driver_export_name || name) || null;
     const driverPk = matched[0]?.driver_pk != null
       ? Number(matched[0].driver_pk)
-      : resolveDriverPk(directory, realCid, mappedName, batch.camp_name, batch.wave);
-    const key = driverIdentity(driverPk, realCid, mappedName, workerKey(src));
+      : resolveDriverPk(directory, realCid, mappedName, resolved.name, batch.wave);
+    const key = batch.camp_code==='__ALL__'
+      ? 'camp:'+resolved.code+'|'+driverIdentity(driverPk, realCid, mappedName, workerKey(src))
+      : driverIdentity(driverPk, realCid, mappedName, workerKey(src));
     const d = deliveryMetric(src?.deliverySummary || {});
-    const record = {
+    out.push({
       batch_id: batch.id,
       schedule_date: batch.schedule_date,
       meta_work_date: batch.meta_work_date,
-      camp_code: batch.camp_code,
-      camp_name: batch.camp_name,
+      camp_code: resolved.code,
+      camp_name: resolved.name,
       wave: batch.wave,
       meta_worker_key: key,
       coupang_id: realCid,
@@ -694,52 +662,54 @@ async function storeFreshRows(env, batch, schedule, directory, freshResponse, co
       delivery_pdd_miss: d.pdd,
       delivery_total: d.total,
       delivery_complete_rate: d.rate,
-      last_seen_at: collectedAt,
+        last_seen_at: collectedAt,
       raw_payload: src,
       updated_at: collectedAt
-    };
-    const prior = byKey.get(key);
-    if (!prior || record.delivery_total > prior.delivery_total) byKey.set(key, record);
+    });
   }
-  const out = [...byKey.values()];
-  if (out.length) await sbUpsert(env, "meta_realtime_fresh_current", out, "batch_id,meta_worker_key");
-  // Only prune obsolete keys after an entire successful response was saved.
-  const old = await sbGet(env, `meta_realtime_fresh_current?select=meta_worker_key&batch_id=eq.${batch.id}`) || [];
-  const stale = old.filter(r=>!byKey.has(r.meta_worker_key)).map(r=>r.meta_worker_key);
-  if (stale.length) {
-    const keys = stale.map(k=>`"${String(k).replace(/\\/g,'\\\\').replace(/"/g,'\\"')}"`).join(',');
-    await sbDelete(env, `meta_realtime_fresh_current?batch_id=eq.${batch.id}&meta_worker_key=in.(${encodeURIComponent(keys)})`);
-  }
-  return out;
+  const unique=new Map();for(const r of out){const old=unique.get(r.meta_worker_key);if(!old||r.delivery_total>=old.delivery_total)unique.set(r.meta_worker_key,r);}
+  const rows=[...unique.values()];
+  if(rows.length)await sbUpsert(env,'meta_realtime_fresh_current',rows,'batch_id,meta_worker_key');
+  const keep=rows.map(r=>'"'+r.meta_worker_key.replaceAll('"','')+'"').join(',');
+  await sbDelete(env,'meta_realtime_fresh_current?batch_id=eq.'+batch.id+(keep?'&meta_worker_key=not.in.('+encodeURIComponent(keep)+')':''));
+  return rows;
 }
 
-async function processBatch(env, cookies, batch) {
-  const codes = metaCampCandidates(batch.meta_camp_codes?.length ? batch.meta_camp_codes : [batch.camp_code]);
+async function processBatch(env, cookies, batch, directory) {
+  await assertCollecting(env);
+  const aggregate=batch.camp_code==='__ALL__';
+  const codes=aggregate?uniq(batch.meta_camp_codes||[]):metaCampCandidates(batch.meta_camp_codes?.length?batch.meta_camp_codes:[batch.camp_code]);
+  const mapIndex=campIndex(await loadMaster(env));
   if (!codes.length) throw new Error(`META camp code 없음: ${batch.camp_name}`);
 
-  const main = await metaPost(cookies, META_WORKER_URL, workerPayload(codes, batch.wave, batch.meta_work_date));
-  if (!main.success) throw new Error(`META ${main.status}: ${main.raw.slice(0, 300)}`);
+  const main = await fetchMetaByCodeChunks(cookies, META_WORKER_URL, codes, batch.wave, batch.meta_work_date);
+  if (!main.success) throw metaFailure(main,'worker collection');
+  const metaRows=metaContent(main.body);
+  // META often responds HTTP 200 with zero workers for an out-of-scope camp code.
+  // Record this separately from a batch that has never been attempted.
 
   let fresh = null;
   if (batch.wave === "WAVE2") {
-    fresh = await metaPost(cookies, META_WORKER_URL, workerPayload(codes, batch.wave, batch.meta_work_date, "20:00"));
+    fresh = await fetchMetaByCodeChunks(cookies, META_WORKER_URL, codes, batch.wave, batch.meta_work_date, "20:00");
+    if(!fresh.success)throw metaFailure(fresh,"fresh collection");
   }
 
-  const schedule = await loadSchedule(env, batch.schedule_date, batch.wave, batch.camp_name);
-  const directory = await loadDriverDirectory(env);
+  const schedule = await loadSchedule(env, batch.schedule_date, batch.wave, aggregate?null:batch.camp_name);
   const prevRows = await sbGet(env, `meta_realtime_current?select=*&batch_id=eq.${batch.id}`) || [];
   const prevMap = new Map(prevRows.map(r => [rowIdentity(r), r]));
   const byKey = new Map();
   const now = nowIso();
   const expRounds = expectedRounds(batch);
 
-  for (const src of metaContent(main.body)) {
+  for (const src of metaRows) {
+    const resolved=resolveSourceCamp(src,mapIndex,aggregate);
+    const scopedSchedule=schedule.filter(r=>text(r.camp)===resolved.name||text(r.camp)===resolved.code);
     const w = src?.workerInfo || {};
     const name = workerName(src);
     const metaCid = coupangId(src);
     const actualRoutes = uniq((w.workSubRoutes || []).map(normRoute));
-    let matched = scheduleMatch(schedule, metaCid, name);
-    if (!matched.length) matched = scheduleMatchByRoutes(schedule, actualRoutes);
+    let matched = scheduleMatch(scopedSchedule, metaCid, name);
+    if (!matched.length && !metaCid && !name) matched = scheduleMatchByRoutes(scopedSchedule, actualRoutes);
 
     const scheduledRoutes = uniq(matched.map(r => normRoute(r.route_label)).filter(r => r && r !== "휴무자"));
     const realCid = text(matched[0]?.driver_coupang_id || metaCid) || null;
@@ -752,8 +722,10 @@ async function processBatch(env, cookies, batch) {
     ) || null;
     const driverPk = matched[0]?.driver_pk != null
       ? Number(matched[0].driver_pk)
-      : resolveDriverPk(directory, realCid, mappedName, batch.camp_name, batch.wave);
-    const key = driverIdentity(driverPk, realCid, mappedName, workerKey(src));
+      : resolveDriverPk(directory, realCid, mappedName, resolved.name, batch.wave);
+    const key = aggregate
+      ? 'camp:'+resolved.code+'|'+driverIdentity(driverPk, realCid, mappedName, workerKey(src))
+      : driverIdentity(driverPk, realCid, mappedName, workerKey(src));
     const prev = prevMap.get(key);
     const accountType = text(matched[0]?.driver_account_type || w.workerAccountType || w.accountType) || null;
 
@@ -761,9 +733,9 @@ async function processBatch(env, cookies, batch) {
     const fb = collectionMetric(src?.freshbagSummary || {}, false);
     const ret = batch.wave === "WAVE1" ? null : collectionMetric(src?.returnSummary || {}, true);
 
-    const extraRoutes = actualRoutes.filter(a => !scheduledRoutes.some(sr => scheduledRouteMatches(a, sr)));
+    const extraRoutes = scopedSchedule.length ? actualRoutes.filter(a => !scheduledRoutes.some(sr => scheduledRouteMatches(a, sr))) : [];
     const routeAlerts = extraRoutes.map(route => {
-      const owners = schedule
+      const owners = scopedSchedule
         .filter(r => r.route_label && r.route_label !== "휴무자" && scheduledRouteMatches(route, r.route_label))
         .sort((a,b) => normRoute(b.route_label).length - normRoute(a.route_label).length);
       const owner = owners[0];
@@ -775,19 +747,19 @@ async function processBatch(env, cookies, batch) {
       };
     });
 
-    const { currentRound, rounds, lastProgressAt, lastScanActivityAt, exactCandidate,
-      workCompletedAt, completionMethod, completionDetectedAt, deliveryDone, returnDone,
-      freshbagDone, totalRemaining, reopenedByScan } = advanceProgress(prev,d,ret,fb,batch,now);
+    const progress=advanceProgress(prev,d,ret,fb,batch,now);
+    const {currentRound,rounds,lastProgressAt,lastScanActivityAt,exactCandidate,workCompletedAt,
+      completionMethod,completionDetectedAt,deliveryDone,returnDone,freshbagDone,totalRemaining,reopenedByScan}=progress;
 
     const rec = {
       batch_id: batch.id,
       schedule_date: batch.schedule_date,
       meta_work_date: batch.meta_work_date,
-      camp_code: batch.camp_code,
-      camp_name: batch.camp_name,
+      camp_code: resolved.code,
+      camp_name: resolved.name,
       wave: batch.wave,
       meta_worker_key: key,
-      source_camp_code: sourceCampCode(src),
+      source_camp_code: resolved.sourceCode,
       driver_pk: driverPk,
       coupang_id: realCid,
       driver_name: mappedName,
@@ -882,21 +854,25 @@ async function processBatch(env, cookies, batch) {
     }
   }
 
-  const rows = [...byKey.values()];
-  const freshRows = await storeFreshRows(env, batch, schedule, directory, fresh, now);
-  const freshMap = new Map((freshRows || []).map(r => [r.meta_worker_key, r]));
-  const freshComplete = fresh?.success === true;
-  for (const row of rows) {
-    const fr = freshMap.get(row.meta_worker_key);
-    if (!freshComplete) continue; // Never replace good data with zeros after an API failure.
-    for (const field of ['assigned','scanned','completed','impossible','pdd_miss','total','complete_rate']) {
-      row['fresh_delivery_'+field] = fr?.['delivery_'+field] ?? 0;
-    }
+  const rows=[...byKey.values()];
+  const unidentified=metaRows.filter(src=>workerKey(src)==='fallback:no-route');
+  if(unidentified.length>1) {
+    throw new Error('META_UNIDENTIFIED_WORKERS: '+unidentified.length+' raw records without stable worker identifiers; workerInfo keys='+
+      Object.keys(unidentified[0]?.workerInfo||{}).slice(0,10).join(','));
   }
-  // Preserve workers omitted by an individual META response, as in MAROOWELL.
-  if (rows.length) await sbUpsert(env, "meta_realtime_current", rows, "batch_id,meta_worker_key");
-
-  if (rows.length) {
+  const resolvedCampCount=new Set(rows.filter(r=>r.camp_code!=='META_UNMAPPED').map(r=>r.camp_code)).size;
+  const unmappedCount=rows.filter(r=>r.camp_code==='META_UNMAPPED').length;
+  const emptyWarning=!metaRows.length
+    ? 'META_EMPTY_WORKERS: META returned 0 worker rows; check camp codes ('+codes.slice(0,6).join(',')+') and META workDate '+batch.meta_work_date
+    : null;
+  await assertCollecting(env);
+  const freshRows=await storeFreshRows(env,batch,schedule,directory,fresh,now,mapIndex);
+  const freshMap=new Map(freshRows.map(r=>[r.meta_worker_key,r]));
+  if(batch.wave==='WAVE2'&&fresh?.success){
+    for(const r of rows){const fr=freshMap.get(r.meta_worker_key);for(const field of ['assigned','scanned','completed','impossible','pdd_miss','total','complete_rate'])r['fresh_delivery_'+field]=fr?.['delivery_'+field]??0;}
+  }
+  if(rows.length)await sbUpsert(env,'meta_realtime_current',rows,'batch_id,meta_worker_key');
+  if(rows.length){
     const minute = sampleMinute(now);
     const historyRows = rows.map(r => {
       const fr = freshMap.get(r.meta_worker_key);
@@ -926,13 +902,13 @@ async function processBatch(env, cookies, batch) {
         delivery_pdd_miss: r.delivery_pdd_miss,
         delivery_total: r.delivery_total,
         delivery_complete_rate: r.delivery_complete_rate,
-        fresh_delivery_assigned: r.fresh_delivery_assigned ?? 0,
-        fresh_delivery_scanned: r.fresh_delivery_scanned ?? 0,
-        fresh_delivery_completed: r.fresh_delivery_completed ?? 0,
-        fresh_delivery_impossible: r.fresh_delivery_impossible ?? 0,
-        fresh_delivery_pdd_miss: r.fresh_delivery_pdd_miss ?? 0,
-        fresh_delivery_total: r.fresh_delivery_total ?? 0,
-        fresh_delivery_complete_rate: r.fresh_delivery_complete_rate ?? 0,
+        fresh_delivery_assigned: fr?.delivery_assigned ?? 0,
+        fresh_delivery_scanned: fr?.delivery_scanned ?? 0,
+        fresh_delivery_completed: fr?.delivery_completed ?? 0,
+        fresh_delivery_impossible: fr?.delivery_impossible ?? 0,
+        fresh_delivery_pdd_miss: fr?.delivery_pdd_miss ?? 0,
+        fresh_delivery_total: fr?.delivery_total ?? 0,
+        fresh_delivery_complete_rate: fr?.delivery_complete_rate ?? 0,
         return_pending: r.return_pending,
         return_collected: r.return_collected,
         return_uncollected: Math.max(Number(r.return_uncollected_raw || 0), Number(r.return_absent_raw || 0)),
@@ -952,7 +928,7 @@ async function processBatch(env, cookies, batch) {
   const stateRows = await sbGet(env,
     `meta_realtime_current?select=meta_worker_key,driver_pk,coupang_id,driver_name,work_completed_at,completion_method&batch_id=eq.${batch.id}`
   ) || [];
-  const expected = scheduledPeople(schedule);
+  const expected = aggregate ? [] : scheduledPeople(schedule);
   const matched = expected.length
     ? expected.map(p => stateRows.find(r => currentMatchesPerson(r,p))).filter(Boolean)
     : stateRows;
@@ -987,31 +963,19 @@ async function processBatch(env, cookies, batch) {
     completion_candidate_at: campComplete ? (batch.completion_candidate_at || now) : null,
     poll_interval_seconds: 60,
     next_poll_at: now,
-    last_error: null,
+    last_error: emptyWarning,
     updated_at: now
   });
 
   if (shouldFinalize) {
-    const freshFinal = await sbGet(env, `meta_realtime_fresh_current?select=*&batch_id=eq.${batch.id}`) || [];
     const finalized = await sbPost(env, "rpc/meta_finalize_realtime_batch", { p_batch_id: batch.id });
-    for (const fr of freshFinal) {
-      await sbPatch(env,
-        `meta_realtime_final?batch_id=eq.${batch.id}&meta_worker_key=eq.${encodeURIComponent(fr.meta_worker_key)}`,
-        {
-          fresh_delivery_assigned: fr.delivery_assigned,
-          fresh_delivery_scanned: fr.delivery_scanned,
-          fresh_delivery_completed: fr.delivery_completed,
-          fresh_delivery_impossible: fr.delivery_impossible,
-          fresh_delivery_pdd_miss: fr.delivery_pdd_miss,
-          fresh_delivery_total: fr.delivery_total,
-          fresh_delivery_complete_rate: fr.delivery_complete_rate
-        }
-      );
-    }
+
+
     return {
       camp: batch.camp_name,
       wave: batch.wave,
       workers: rows.length,
+      meta_rows: metaRows.length,
       finalized,
       codes,
       completion_method: batchMethod
@@ -1022,9 +986,11 @@ async function processBatch(env, cookies, batch) {
     camp: batch.camp_name,
     wave: batch.wave,
     workers: stateRows.length,
+    meta_rows: metaRows.length,
     complete: campComplete,
     stable,
-    codes
+    codes,
+    warning: emptyWarning, resolved_camps:resolvedCampCount, unmapped_workers:unmappedCount, contracted_codes:codes.length
   };
 }
 
@@ -1036,93 +1002,14 @@ async function heartbeat(env, cookies) {
   await saveSession(
     env,
     cookies,
-    response.success ? "active" : "expired",
+    response.success ? "active" : (response.status===401 || response.status===403 ? "expired" : "error"),
     response.status,
     response.success ? null : `heartbeat ${response.status}: ${response.raw.slice(0, 200)}`
   );
   return { ok: response.success, status: response.status };
 }
 
-async function runCollector(env, force = false) {
-  requireConfig(env);
-  if (String(env.REALTIME_SCHEMA_READY || '') !== '2026-10-09-night3') {
-    return {ok:false, error:'REALTIME_SCHEMA_UPGRADE_REQUIRED', results:[]};
-  }
-  const state = await sessionState(env);
-  if (state?.collector_paused) return { ok: true, paused: true, at: nowIso(), results: [] };
-  if (!state?.cookie_bundle) return { ok: false, error: "META DB session 없음", at: nowIso() };
 
-  const cookies = parseCookieBundle(state.cookie_bundle);
-  const purged = await purgeStaleRealtimeRows(env);
-  const ensured = await ensureBatches(env);
-  const due = await dueBatches(env, force);
-  const results = [];
-  let successes = 0, failure = null;
-
-  for (const batch of due) {
-    const lockToken = crypto.randomUUID();
-    let claimed = false;
-    try {
-      claimed = await sbPost(env, "rpc/meta_claim_realtime_batch", {
-        p_batch_id: batch.id,
-        p_token: lockToken,
-        p_lease_seconds: 120
-      });
-      if (!claimed) {
-        results.push({ camp: batch.camp_name, wave: batch.wave, skipped: "collector_locked" });
-        continue;
-      }
-      results.push(await processBatch(env, cookies, batch));
-      successes += 1;
-    } catch (e) {
-      const msg = String(e?.message || e);
-      failure = e;
-      results.push({ camp: batch.camp_name, wave: batch.wave, error: msg });
-      if (claimed) {
-        await sbPatch(env, `meta_realtime_batch?id=eq.${batch.id}`, {
-          status: "error",
-          last_error: msg.slice(0, 500),
-          next_poll_at: kstIsoAt(Date.now() + 300000),
-          updated_at: nowIso()
-        }).catch(() => {});
-      }
-      if (/META (401|403|302)/.test(msg)) {
-        const status = Number(msg.match(/META (\d+)/)?.[1] || 401);
-        await saveSession(env, cookies, "expired", status, msg.slice(0, 250)).catch(() => {});
-        break;
-      }
-    } finally {
-      if (claimed) {
-        await sbPost(env, "rpc/meta_release_realtime_batch", {
-          p_batch_id: batch.id,
-          p_token: lockToken
-        }).catch(() => {});
-      }
-    }
-  }
-
-  const kp = kstParts();
-  if (!due.length && (force || kp.minute % 5 === 0)) {
-    const health=await heartbeat(env,cookies); results.push({heartbeat:health});
-    if(!health.ok)failure=new Error('META heartbeat failed');
-  } else if (failure) {
-    const msg = String(failure.message || failure);
-    const expired = /META (401|403|302)/.test(msg);
-    await saveSession(env, cookies, expired ? 'expired' : 'error', expired ? Number(msg.match(/META (\d+)/)?.[1]||401) : 500, msg.slice(0,250));
-  } else if (successes > 0) {
-    await saveSession(env, cookies, "active", 200, null);
-  }
-
-  return {
-    ok: !failure,
-    at: nowIso(),
-    successful: successes,
-    purged_stale_batches: purged,
-    ensure: ensured,
-    due: due.length,
-    results
-  };
-}
 
 // ============================================================================
 // Keycloak + SMS MFA login
@@ -1441,7 +1328,7 @@ button{width:100%;margin-top:12px;padding:14px;border:0;border-radius:12px;backg
 </style></head><body><div class="card">
 <h1>META 문자 인증</h1>
 <div class="sub">${esc(masked || "등록된 휴대폰")}으로 인증번호를 발송했습니다.<br>가장 최근에 받은 6자리 번호를 입력하세요.</div>
-<form method="post" action="https://meta-direct-poc.tonest-admin.workers.dev/login-submit-code" autocomplete="off">
+<form method="post" action="/login-submit-code" autocomplete="off">
 <input name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required autofocus placeholder="000000">
 <input type="hidden" name="state" value="${esc(token)}">
 <button type="submit">인증하고 세션 저장</button>
@@ -1540,117 +1427,375 @@ async function testDb(env) {
 // Worker entry
 // ============================================================================
 
-async function requireAccess(request,env,adminOnly=false) {
-  const bearer=request.headers.get('authorization') || '';
+// TO:NEST night work has three rounds. Offset-free database times are KST.
+const expectedRounds = b => String(b?.wave || '').toUpperCase() === 'WAVE1' ? 3 : 2;
+const progressNumber = v => Math.max(0, Number(v) || 0);
+function progressRoundFields(prev, round) {
+  return {scan:prev?.[`round${round}_scan_started_at`] || (round===1?prev?.scan_started_at:null) || null,
+    delivery:prev?.[`round${round}_delivery_started_at`] || (round===1?prev?.delivery_started_at:null) || null,
+    completed:prev?.[`round${round}_completed_at`] || null,
+    detected:prev?.[`round${round}_completion_detected_at`] || null,
+    method:prev?.[`round${round}_completion_method`] || null};
+}
+function advanceProgress(prev, d, ret, fb, batch, now) {
+  const n=progressNumber, expRounds=expectedRounds(batch), night=batch.wave==='WAVE1';
+  const pairs=[[prev?.delivery_assigned,d.assigned],[prev?.delivery_scanned,d.scanned],
+    [prev?.delivery_completed,d.completed],[prev?.delivery_impossible,d.impossible],
+    [prev?.delivery_pdd_miss,d.pdd],[prev?.delivery_total,d.total],[prev?.freshbag_pending,fb.pending],
+    [prev?.freshbag_collected,fb.collected],[prev?.freshbag_uncollected,fb.uncollected]];
+  if(!night)pairs.push([prev?.return_pending,ret?.pending],[prev?.return_collected,ret?.collected],
+    [prev?.return_uncollected_raw,ret?.rawUn],[prev?.return_absent_raw,ret?.rawAbsent]);
+  const changed=!prev||pairs.some(([a,b])=>n(a)!==n(b));
+  // Assignments, cancellations and PDD misses do not establish actual scans/deliveries.
+  const scanMoved=prev?n(d.scanned)>n(prev.delivery_scanned)
+    ||(n(d.total)>n(prev.delivery_total)&&n(d.scanned)>0):n(d.scanned)>0||n(d.completed)>0;
+  const deliveryMoved=n(d.completed)>n(prev?.delivery_completed);
+  let currentRound=Math.max(1,Math.min(expRounds,n(prev?.current_round)||1));
+  const rounds={1:progressRoundFields(prev,1),2:progressRoundFields(prev,2),3:progressRoundFields(prev,3)};
+  let lastProgressAt=changed?now:(prev?.last_progress_at||now);
+  let lastScanActivityAt=scanMoved?now:(prev?.last_scan_activity_at||null);
+  if(!rounds[1].scan&&(n(d.scanned)>0||n(d.completed)>0))rounds[1].scan=now;
+  let advanced=false;
+  if(rounds[currentRound].completed&&scanMoved&&currentRound<expRounds){
+    currentRound++;advanced=true;rounds[currentRound].scan||=now;lastProgressAt=now;lastScanActivityAt=now;
+  }
+  if(deliveryMoved)rounds[currentRound].delivery||=now;
+  const deliveryDone=n(d.total)>0&&n(d.scanned)===0;
+  const returnDone=night||n(ret?.pending)===0, freshbagDone=n(fb.pending)===0;
+  const deliveryRemaining=n(d.scanned),returnRemaining=night?0:n(ret?.pending),freshbagRemaining=n(fb.pending);
+  const totalRemaining=deliveryRemaining+returnRemaining+freshbagRemaining;
+  const idleMinutes=Math.max(0,(tsMs(now)-tsMs(lastProgressAt))/60000)||0;
+  const invalidOldCompletion=!!prev?.work_completed_at&&(currentRound<expRounds||!rounds[currentRound].delivery);
+  const pendingIncreased=n(d.scanned)>n(prev?.delivery_scanned)||n(fb.pending)>n(prev?.freshbag_pending)
+    ||(!night&&n(ret?.pending)>n(prev?.return_pending));
+  const reopened=!!prev?.work_completed_at&&(scanMoved||pendingIncreased||invalidOldCompletion);
+  if(rounds[currentRound].completed&&(scanMoved||pendingIncreased)&&!advanced){
+    rounds[currentRound].completed=null;rounds[currentRound].detected=null;rounds[currentRound].method=null;
+  }
+  const roundHasDelivery=!!rounds[currentRound].delivery;
+  const candidate=deliveryDone&&returnDone&&freshbagDone&&roundHasDelivery&&!advanced&&!scanMoved&&!pendingIncreased;
+  const exactCandidate=candidate?(prev?.exact_complete_candidate_at||now):null;
+  const previousPollMs=tsMs(prev?.last_seen_at);
+  const exactConfirmed=candidate&&!!prev?.exact_complete_candidate_at
+    &&tsMs(prev.exact_complete_candidate_at)>=tsMs(rounds[currentRound].delivery)
+    &&Number.isFinite(previousPollMs)&&tsMs(now)>previousPollMs;
+  if(currentRound<expRounds&&roundHasDelivery&&!rounds[currentRound].completed&&(exactConfirmed||idleMinutes>=30)){
+    rounds[currentRound].completed=exactConfirmed?prev.exact_complete_candidate_at:kstIsoAt(tsMs(lastProgressAt)+60000);
+    rounds[currentRound].detected=now;rounds[currentRound].method=exactConfirmed?'round_exact_2poll':'idle_30m';
+  }
+  const finalRoundReady=currentRound>=expRounds&&roundHasDelivery;
+  const staleTailConfirmed=finalRoundReady&&deliveryRemaining<=2&&returnRemaining<=2&&freshbagRemaining<=2&&idleMinutes>=30;
+  let workCompletedAt=reopened?null:(prev?.work_completed_at||null);
+  let completionMethod=reopened?null:(prev?.completion_method||null);
+  let completionDetectedAt=reopened?null:(prev?.completion_detected_at||null);
+  if(!reopened&&!workCompletedAt&&finalRoundReady&&(exactConfirmed||staleTailConfirmed)){
+    workCompletedAt=exactConfirmed?prev.exact_complete_candidate_at:kstIsoAt(tsMs(lastProgressAt)+60000);
+    completionMethod=exactConfirmed?'exact_2poll':'stale_tail_30m';completionDetectedAt=now;
+  }
+  if(workCompletedAt){rounds[currentRound].completed||=workCompletedAt;rounds[currentRound].detected||=completionDetectedAt;rounds[currentRound].method||=completionMethod;}
+  return {expRounds,currentRound,rounds,lastProgressAt,lastScanActivityAt,exactCandidate,workCompletedAt,
+    completionMethod,completionDetectedAt,deliveryDone,returnDone,freshbagDone,totalRemaining,reopenedByScan:reopened};
+}
+
+const BUILD_VERSION='2026-10-13-chunwoo-all-batch-keepalive-v7';
+const schemaResults=new Map();
+const masterResults=new Map();
+const singleFlights=new Map();
+const discoveryResults=new Map();
+const recentDiscoveries=new Set();
+const optionalWarnings=new Map();
+// Minimal data contract, not a replacement for an administrator's SQL/RLS audit.
+const REQUIRED_COLUMNS={"meta_backend_state": ["id", "cookie_bundle", "status", "updated_at", "last_success_at", "last_http_status", "last_error", "collector_paused", "collector_paused_at", "collector_paused_by"], "meta_realtime_batch": ["id", "schedule_date", "meta_work_date", "camp_code", "camp_name", "wave", "status", "collect_from", "collect_until", "started_at", "last_polled_at", "completion_candidate_at", "finalized_at", "worker_count", "completed_worker_count", "stable_complete_poll_count", "poll_interval_seconds", "next_poll_at", "last_error", "created_at", "updated_at", "meta_camp_codes", "fresh_miss", "dawn_miss", "expected_rounds", "completion_method", "completion_detected_at", "collector_lock_token", "collector_lock_until", "work_completed_at", "metrics_status", "metrics_closed_at", "visible_until", "metrics_close_at"], "meta_realtime_current": ["id", "batch_id", "schedule_date", "meta_work_date", "camp_code", "camp_name", "wave", "coupang_id", "driver_name", "driver_account_type", "scheduled_routes", "actual_routes", "extra_routes", "delivery_assigned", "delivery_scanned", "delivery_completed", "delivery_impossible", "delivery_pdd_miss", "delivery_total", "delivery_complete_rate", "return_pending", "return_collected", "return_uncollected_raw", "return_absent_raw", "return_uncollected", "return_total", "return_attempt_rate", "return_collection_rate", "freshbag_pending", "freshbag_collected", "freshbag_uncollected", "freshbag_total", "freshbag_attempt_rate", "freshbag_collection_rate", "scan_started_at", "delivery_started_at", "delivery_completed_at", "all_completed_at", "first_seen_at", "last_seen_at", "delivery_done", "return_done", "freshbag_done", "raw_payload", "created_at", "updated_at", "fresh_delivery_assigned", "fresh_delivery_scanned", "fresh_delivery_completed", "fresh_delivery_impossible", "fresh_delivery_pdd_miss", "fresh_delivery_total", "fresh_delivery_complete_rate", "meta_worker_key", "source_camp_code", "all_done", "share", "fresh_miss", "dawn_miss", "driver_pk", "current_round", "expected_rounds", "last_progress_at", "last_scan_activity_at", "exact_complete_candidate_at", "round1_scan_started_at", "round1_delivery_started_at", "round1_completed_at", "round1_completion_detected_at", "round1_completion_method", "round2_scan_started_at", "round2_delivery_started_at", "round2_completed_at", "round2_completion_detected_at", "round2_completion_method", "round3_scan_started_at", "round3_delivery_started_at", "round3_completed_at", "round3_completion_detected_at", "round3_completion_method", "completion_method", "completion_detected_at", "work_completed_at"], "meta_realtime_fresh_current": ["id", "batch_id", "schedule_date", "meta_work_date", "camp_code", "camp_name", "wave", "meta_worker_key", "coupang_id", "driver_name", "delivery_assigned", "delivery_scanned", "delivery_completed", "delivery_impossible", "delivery_pdd_miss", "delivery_total", "delivery_complete_rate", "first_seen_at", "last_seen_at", "raw_payload", "created_at", "updated_at", "fresh_miss", "driver_pk"], "meta_realtime_history": ["id", "batch_id", "sampled_at", "sample_minute", "schedule_date", "meta_work_date", "camp_code", "camp_name", "wave", "meta_worker_key", "driver_pk", "coupang_id", "driver_name", "current_round", "expected_rounds", "delivery_assigned", "delivery_scanned", "delivery_completed", "delivery_impossible", "delivery_pdd_miss", "delivery_total", "delivery_complete_rate", "fresh_delivery_assigned", "fresh_delivery_scanned", "fresh_delivery_completed", "fresh_delivery_impossible", "fresh_delivery_pdd_miss", "fresh_delivery_total", "fresh_delivery_complete_rate", "return_pending", "return_collected", "return_uncollected", "return_total", "freshbag_pending", "freshbag_collected", "freshbag_uncollected", "freshbag_total", "delivery_remaining", "total_remaining", "actual_routes", "created_at"], "meta_realtime_final": ["id", "batch_id", "schedule_date", "meta_work_date", "camp_code", "camp_name", "wave", "coupang_id", "driver_name", "driver_account_type", "scheduled_routes", "actual_routes", "extra_routes", "delivery_assigned", "delivery_scanned", "delivery_completed", "delivery_impossible", "delivery_pdd_miss", "delivery_total", "delivery_complete_rate", "return_pending", "return_collected", "return_uncollected_raw", "return_absent_raw", "return_uncollected", "return_total", "return_attempt_rate", "return_collection_rate", "freshbag_pending", "freshbag_collected", "freshbag_uncollected", "freshbag_total", "freshbag_attempt_rate", "freshbag_collection_rate", "scan_started_at", "delivery_started_at", "delivery_completed_at", "all_completed_at", "first_seen_at", "last_seen_at", "delivery_done", "return_done", "freshbag_done", "raw_payload", "finalized_at", "created_at", "updated_at", "fresh_delivery_assigned", "fresh_delivery_scanned", "fresh_delivery_completed", "fresh_delivery_impossible", "fresh_delivery_pdd_miss", "fresh_delivery_total", "fresh_delivery_complete_rate", "meta_worker_key", "source_camp_code", "all_done", "share", "fresh_miss", "dawn_miss", "driver_pk", "actual_rounds", "expected_rounds", "round1_scan_started_at", "round1_delivery_started_at", "round1_completed_at", "round1_completion_detected_at", "round1_completion_method", "round2_scan_started_at", "round2_delivery_started_at", "round2_completed_at", "round2_completion_detected_at", "round2_completion_method", "round3_scan_started_at", "round3_delivery_started_at", "round3_completed_at", "round3_completion_detected_at", "round3_completion_method", "completion_method", "completion_detected_at", "work_completed_at"]};
+function schemaIssue(error,table){return {table,code:error.code||'',status:error.status||500,message:String(error.message||error).slice(0,500)};}
+async function inspectSchema(env,force=false){
+  const key=supabaseUrl(env),cached=schemaResults.get(key);
+  if(!force&&cached&&Date.now()<cached.expires)return cached.value;
+  const issues=[];
+  for(const [table,columns] of Object.entries(REQUIRED_COLUMNS)){
+    try{await sbGet(env,table+'?select='+columns.join(',')+'&limit=0');}
+    catch(e){issues.push(schemaIssue(e,table));}
+  }
+  const value={ready:issues.length===0,check:'required_columns_readable',checked_at:new Date().toISOString(),issues};
+  schemaResults.set(key,{value,expires:Date.now()+(value.ready?120000:10000)});
+  return value;
+}
+function optionalSchemaError(e){return ['42P01','42703','PGRST204','PGRST205'].includes(e?.code);}
+async function optionalGet(env,path){
+  const table=path.split('?')[0];
+  try{const result=await sbGet(env,path);optionalWarnings.delete(table);return result||[];}
+  catch(e){if(!optionalSchemaError(e))throw e;optionalWarnings.set(table,schemaIssue(e,table));return [];}
+}
+async function loadMaster(env){
+  const key=supabaseUrl(env),cached=masterResults.get(key);
+  if(cached&&Date.now()<cached.expires)return cached.rows;
+  const rows=await getMaroCampRows(env,'');
+  if(!Array.isArray(rows)||!rows.length)throw new Error('CAMP_DIRECTORY_EMPTY: check CAMP_DIRECTORY binding / MAROOWELL_API_KEY');
+  masterResults.set(key,{rows,expires:Date.now()+300000});return rows;
+}
+function activeTargets(now=new Date()){
+  const kp=kstParts(now),out=[];
+  if(kp.hour>=20)out.push({date:kp.date,wave:'WAVE1'});
+  else if(kp.hour<12)out.push({date:addDate(kp.date,-1),wave:'WAVE1'});
+  if(kp.hour>=7)out.push({date:kp.date,wave:'WAVE2'});
+  return out;
+}
+function campIdentity(row){
+  const info=row?.campInfo||row?.campSummary||{};
+  const campObj=typeof row?.camp==='object'?row.camp:{};
+  const code=text(row?.campCode||info.campCode||campObj.code||campObj.campCode||row?.code||row?.sourceCampCode).toUpperCase();
+  const name=text(row?.campName||info.campName||campObj.name||campObj.campName||(typeof row?.camp==='string'?row.camp:''));
+  return {code,name};
+}
+function campIndex(rows){
+  const byCode=new Map(),byName=new Map();
+  for(const row of rows){
+    const name=text(row.camp||row.camp_name||row.campName),code=text(row.code||row.campCode).toUpperCase();
+    if(!code)continue;
+    const key=name||code;
+    if(!byName.has(key))byName.set(key,{name:key,code:null,codes:[]});
+    const group=byName.get(key);group.codes=uniq([...group.codes,...metaCampCandidates([code])]);
+    if(!group.code||text(row.mb_camp)==='\ubcf8\ucea0\ud504')group.code=code;
+    for(const alias of metaCampCandidates([code]))byCode.set(alias,group);
+  }
+  return {byCode,byName};
+}
+function campShowsWork(row){
+  const counts=[];
+  for(const b of [row?.deliverySummary,row?.returnSummary,row?.freshbagSummary]){
+    if(!b||typeof b!=='object')continue;
+    for(const [k,v] of Object.entries(b))if(/Count$/.test(k)&&Number.isFinite(Number(v)))counts.push(Number(v));
+  }
+  for(const k of ['workerCount','totalWorkerCount','activeWorkerCount'])if(row?.[k]!=null&&Number.isFinite(Number(row[k])))counts.push(Number(row[k]));
+  return !counts.length||counts.some(n=>n>0);
+}
+function uniqueCandidateGroups(summaries,seedNames,index){
+  const map=new Map(),unresolved=[];
+  const add=g=>{if(g?.code&&!map.has(g.code))map.set(g.code,{...g,codes:[...g.codes]});};
+  for(const name of seedNames){const g=index.byName.get(text(name))||index.byCode.get(text(name).toUpperCase());if(g)add(g);}
+  for(const item of summaries){
+    if(!campShowsWork(item))continue;
+    const {code,name}=campIdentity(item);
+    const group=index.byCode.get(code)||index.byName.get(name);
+    if(group)add(group);
+    else if(code)add({code,name:name||code,codes:[code]});
+    else unresolved.push(Object.keys(item||{}).slice(0,12));
+  }
+  return {groups:[...map.values()],unresolved};
+}
+async function ensureBatches(env,cookies,directory){
+  const targets=activeTargets();
+  const dates=uniq(targets.map(t=>t.date));
+  if(!dates.length)return [];
+  const existing=await sbGet(env,'meta_realtime_batch?select=id,schedule_date,wave,camp_code,camp_name,status,meta_camp_codes,last_polled_at' +
+    '&schedule_date=in.('+dates.join(',')+')&limit=250')||[];
+  const missing=targets.filter(t=>!existing.some(b=>b.schedule_date===t.date&&b.wave===t.wave&&b.camp_code==='__ALL__'));
+  let vendor=null;
+  if(missing.length){
+    vendor=await fetchMyVendor(cookies);  // one authenticated META request, only at bootstrap
+    const rows=missing.map(target=>({
+      schedule_date:target.date,
+      meta_work_date:target.wave==='WAVE1'?addDate(target.date,1):target.date,
+      camp_code:'__ALL__',camp_name:'투네스트 전체',wave:target.wave,
+      meta_camp_codes:vendor.contractedCampCodes,status:'collecting',expected_rounds:expectedRounds(target),
+      poll_interval_seconds:60,next_poll_at:nowIso(),updated_at:nowIso()
+    }));
+    await sb(env,'meta_realtime_batch?on_conflict=schedule_date,camp_code,wave',{
+      method:'POST',headers:{prefer:'resolution=merge-duplicates,return=minimal'},body:JSON.stringify(rows)
+    });
+  }
+  // Retire, not delete, old per-camp batches so no historical records are lost.
+  // Only do the PATCH if old active rows really exist (no per-camp request loop).
+  const retired=[];
+  for(const target of targets){
+    if(!missing.some(t=>t.date===target.date&&t.wave===target.wave)&&!existing.some(b=>b.schedule_date===target.date&&b.wave===target.wave&&b.camp_code!=='__ALL__'&&['collecting','completion_candidate','overdue','error'].includes(b.status)))continue;
+    const legacy=existing.filter(b=>b.schedule_date===target.date&&b.wave===target.wave&&b.camp_code!=='__ALL__'&&['collecting','completion_candidate','overdue','error'].includes(b.status));
+    if(!legacy.length)continue;
+    await sbPatch(env, 'meta_realtime_batch?camp_code=neq.__ALL__&schedule_date=eq.'+target.date+
+      '&wave=eq.'+target.wave+'&status=in.(collecting,completion_candidate,overdue,error)',{
+       status:'paused',next_poll_at:null,last_error:'REPLACED_BY_CHUNWOO_AGGREGATE_BATCH',updated_at:nowIso()
+      });
+    retired.push({wave:target.wave,count:legacy.length});
+  }
+  return [{mode:'CHUNWOO_ALL',created:missing.map(t=>t.wave),retired,contractedCampCount:vendor?.contractedCampCodes.length||null}];
+}
+
+function metaFailure(response,stage='query'){
+  const error=new Error(`META ${response.status}: ${stage} failed`);
+  error.status=response.status;error.metaAuthRequired=[401,403,302,303].includes(response.status);return error;
+}
+class CollectorPaused extends Error {constructor(){super('COLLECTOR_PAUSED');this.code='COLLECTOR_PAUSED';}}
+async function assertCollecting(env){
+  const rows=await sbGet(env,'meta_backend_state?id=eq.1&select=collector_paused');
+  if(rows?.[0]?.collector_paused===true)throw new CollectorPaused();
+}
+async function runCollector(env,force=false){
+  const key=supabaseUrl(env);
+  if(singleFlights.has(key))return {ok:true,skipped:'COLLECTOR_ALREADY_RUNNING'};
+  const promise=runCollectorOnce(env,force);singleFlights.set(key,promise);
+  try{return await promise;}finally{if(singleFlights.get(key)===promise)singleFlights.delete(key);}
+}
+async function runCollectorOnce(env,force){
+  requireConfig(env);
+  const state=await sessionState(env);
+  if(state?.collector_paused)return {ok:true,paused:true,at:nowIso(),results:[]};
+  if(!state?.cookie_bundle)return {ok:false,error:'META_SESSION_MISSING',at:nowIso(),results:[]};
+  // Database contract is exposed on /collector/check. Do not spend six extra
+  // Supabase subrequests validating every minute inside the free-plan collector.
+  const cookies=parseCookieBundle(state.cookie_bundle),results=[];
+  let ensured=[],successes=0;
+  try{
+    ensured=await ensureBatches(env,cookies,[]);
+    const due=await dueBatches(env,force);
+    // A single __ALL__ wave can represent nine camps. Never run two waves in
+    // the same free-plan invocation: WAVE1 and WAVE2 alternate while overlapping.
+    for(const batch of due.slice(0,1)){
+      const lockToken=crypto.randomUUID();let claimed=false;
+      try{
+        claimed=await sbPost(env,'rpc/meta_claim_realtime_batch',{p_batch_id:batch.id,p_token:lockToken,p_lease_seconds:240});
+        if(!claimed){results.push({wave:batch.wave,skipped:'collector_locked'});continue;}
+        const directory=await loadDriverDirectory(env);
+        const value=await processBatch(env,cookies,batch,directory);
+        results.push(value);successes++;
+      }catch(e){
+        if(e.code==='COLLECTOR_PAUSED')return {ok:true,paused:true,at:nowIso(),results};
+        if(claimed){await sbPatch(env,'meta_realtime_batch?id=eq.'+batch.id,{
+          status:'error',last_error:text(e.message).slice(0,500),last_polled_at:nowIso(),
+          next_poll_at:kstIsoAt(Date.now()+120000),updated_at:nowIso()
+        }).catch(()=>{});}
+        if(e.metaAuthRequired)await saveSession(env,cookies,'expired',e.status||401,text(e.message).slice(0,250)).catch(()=>{});
+        results.push({wave:batch.wave,error:text(e.message)});
+      }finally{if(claimed)await sbPost(env,'rpc/meta_release_realtime_batch',{p_batch_id:batch.id,p_token:lockToken}).catch(()=>{});}
+    }
+    if(successes>0)await saveSession(env,cookies,'active',200,null);
+    const bad=results.find(r=>r.error);
+    return {ok:!bad,at:nowIso(),successful:successes,due:due.length,deferred:Math.max(0,due.length-1),
+      mode:'CHUNWOO_ALL',ensure:ensured,results,error:bad?.error||undefined};
+  }catch(e){
+    if(e.metaAuthRequired)await saveSession(env,cookies,'expired',e.status||401,text(e.message).slice(0,250)).catch(()=>{});
+    return {ok:false,error:text(e.message),at:nowIso(),successful:successes,ensure:ensured,results};
+  }
+}
+
+async function requireAccess(request,env,superOnly=false){
+  const origin=request.headers.get('origin');
+  if(origin&&!ALLOWED_FRAME_ANCESTORS.includes(origin))throw Object.assign(new Error('Origin not allowed'),{status:403});
+  const bearer=request.headers.get('authorization')||'';
   if(!/^Bearer \S+$/i.test(bearer))throw Object.assign(new Error('Authentication required'),{status:401});
   const key=text(env.SUPABASE_PUBLISHABLE_KEY||env.SUPABASE_ANON_KEY||serviceKey(env));
-  const result=await fetch(supabaseUrl(env)+'/auth/v1/user',{headers:{apikey:key,authorization:bearer},signal:AbortSignal.timeout(10000)});
-  if(!result.ok)throw Object.assign(new Error('Authentication expired'),{status:401});
-  const user=await result.json();
-  if(!user?.id)throw Object.assign(new Error('Invalid authenticated user'),{status:401});
-  const profiles=await sbGet(env,'profiles?select=role,status&user_id=eq.'+encodeURIComponent(user.id)+'&limit=1');
-  const profile=profiles?.[0];
-  const roles=adminOnly?['super_admin','admin']:['super_admin','admin','team_leader'];
+  const response=await fetch(supabaseUrl(env)+'/auth/v1/user',{headers:{apikey:key,authorization:bearer},signal:AbortSignal.timeout(10000)});
+  if(!response.ok)throw Object.assign(new Error('Authentication expired'),{status:401});
+  const user=await response.json();if(!user?.id)throw Object.assign(new Error('Invalid user'),{status:401});
+  const rows=await sbGet(env,'profiles?select=role,status&user_id=eq.'+encodeURIComponent(user.id)+'&limit=1');
+  const profile=rows?.[0],roles=superOnly?['super_admin']:['super_admin','admin','team_leader'];
   if(profile?.status!=='active'||!roles.includes(profile.role))throw Object.assign(new Error('Active TO:NEST manager required'),{status:403});
-  return user.id;
+  return {user,profile,bearer};
 }
-function corsResponse(response,request) {
-  const origin=request.headers.get('origin');
-  const headers=new Headers(response.headers);
+function publicState(state){
+  return state?{status:state.status,paused:state.collector_paused===true,last_success_at:state.last_success_at,
+    last_http_status:state.last_http_status,last_error:state.last_error,updated_at:state.updated_at}:null;
+}
+async function setPaused(request,env,ctx){
+  const access=await requireAccess(request,env,true);
+  const body=await request.json().catch(()=>null);
+  if(typeof body?.paused!=='boolean')return json({ok:false,error:'paused must be a boolean'},400);
+  // Stopping remains possible with an expired META session or incompatible data tables.
+  if(!body.paused){
+    const schema=await inspectSchema(env,true);
+    if(!schema.ready)return json({ok:false,error:'SCHEMA_VALIDATION_FAILED',schema},409);
+  }
+  const key=text(env.SUPABASE_PUBLISHABLE_KEY||env.SUPABASE_ANON_KEY||serviceKey(env));
+  // Delegate to the existing RPC with the USER JWT; do not bypass its super_admin check.
+  const response=await fetch(supabaseUrl(env)+'/rest/v1/rpc/tn_set_meta_collector_paused',{
+    method:'POST',headers:{apikey:key,authorization:access.bearer,'content-type':'application/json'},
+    body:JSON.stringify({p_paused:body.paused}),signal:AbortSignal.timeout(10000)});
+  if(!response.ok){const payload=await response.json().catch(()=>({}));return json({ok:false,error:payload.message||'Collector control failed',code:payload.code},response.status);}
+  // Consume the response before querying state, also on 204 responses.
+  await response.text();
+  const state=await sessionState(env);
+  const enabled=state?.collector_paused===false;
+  if(body.paused&&!state?.collector_paused)return json({ok:false,error:'Pause state was not saved'},409);
+  if(!body.paused&&!enabled)return json({ok:false,error:'Resume state was not saved'},409);
+  if(!body.paused&&state?.cookie_bundle){
+    const pending=runCollector(env,true).catch(e=>console.error('Resume failed',e.message));
+    if(ctx?.waitUntil)ctx.waitUntil(pending);else await pending;
+  }
+  return json({ok:true,paused:!!state?.collector_paused,queued:!body.paused&&!!state?.cookie_bundle,
+    requiresMetaLogin:!state?.cookie_bundle,state:publicState(state)},body.paused?200:202);
+}
+function corsResponse(response,request){
+  const origin=request.headers.get('origin'),headers=new Headers(response.headers);
   if(ALLOWED_FRAME_ANCESTORS.includes(origin))headers.set('access-control-allow-origin',origin);
   headers.set('vary','Origin');headers.set('access-control-allow-headers','Authorization, Content-Type');
-  headers.set('access-control-allow-methods','GET, POST, OPTIONS');
+  headers.set('access-control-allow-methods','GET, POST, OPTIONS');headers.set('cache-control','no-store');
   return new Response(response.body,{status:response.status,headers});
 }
-
-const worker = {
-  async fetch(request, env, ctx) {
-    const url = new URL(request.url);
-    const path = url.pathname.replace(/\/+$/, "") || "/";
-
-    try {
-      if (request.method === 'OPTIONS') return new Response(null,{status:204});
-      if (['/login-send-code','/test-db','/collector/status','/collector/run'].includes(path)) {
-        await requireAccess(request,env,path==='/collector/run');
-        if(path!=='/collector/status' && request.method!=='POST')return json({ok:false,error:'POST required'},405);
+const worker={
+  async fetch(request,env,ctx){
+    const url=new URL(request.url),path=url.pathname.replace(/\/+$/,'')||'/';
+    try{
+      if(request.method==='OPTIONS')return new Response(null,{status:ALLOWED_FRAME_ANCESTORS.includes(request.headers.get('origin'))?204:403});
+      if(path==='/health'){
+        const schema=await inspectSchema(env).catch(e=>({ready:false,issues:[schemaIssue(e,'configuration')]}));
+        const state=await sessionState(env).catch(()=>null);
+        return json({ok:true,service:'tonest-meta-collector',version:BUILD_VERSION,schemaReady:schema.ready,
+          schemaCheck:schema.check||'failed',schemaIssueCount:schema.issues.length,
+          supabaseConfigured:!!text(env.SUPABASE_URL)&&!!serviceKey(env),
+          maroowellApiConfigured:!!env.CAMP_DIRECTORY||!!text(env.MAROOWELL_API_KEY),
+          metaCredentialsConfigured:!!text(env.META_ID)&&!!text(env.META_PW),
+          metaSessionStatus:state?.status||'unknown',collectorPaused:state?.collector_paused===true,time:new Date().toISOString()});
       }
-      if (path === "/health") {
-        const state = await sessionState(env).catch(() => null);
-        return json({
-          ok: true,
-          service: "tonest-meta-collector",
-          version: "2026-10-09-night3",
-          schemaReady: env.REALTIME_SCHEMA_READY === '2026-10-09-night3',
-          supabaseConfigured: !!text(env.SUPABASE_URL) && !!serviceKey(env),
-          maroowellApiConfigured: !!text(env.MAROOWELL_API_KEY) || !!env.CAMP_DIRECTORY,
-          metaCredentialsConfigured: !!text(env.META_ID) && !!text(env.META_PW),
-          metaSessionStatus: state?.status || "unknown",
-          collectorPaused: state?.collector_paused === true,
-          time: new Date().toISOString()
-        });
+      if(path==='/collector/control'){
+        if(request.method!=='POST')return json({ok:false,error:'POST required'},405);
+        return await setPaused(request,env,ctx);
       }
-
-      if (path === "/collector/run") return json(await runCollector(env, true));
-
-      if (path === "/collector/status") {
-        const state = await sessionState(env);
-        const batches = await sbGet(env,
-          "meta_realtime_batch?select=*&order=schedule_date.desc,started_at.desc&limit=100"
-        );
-        return json({ ok:true, state: state ? {
-          status: state.status,
-          last_success_at: state.last_success_at,
-          last_http_status: state.last_http_status,
-          last_error: state.last_error,
-          collector_paused: state.collector_paused,
-          updated_at: state.updated_at
-        } : null, batches });
+      const protectedPaths=['/collector/status','/collector/check','/collector/run','/login-send-code','/test-db'];
+      if(protectedPaths.includes(path)){
+        await requireAccess(request,env);
+        if(path!=='/collector/status'&&request.method!=='POST')return json({ok:false,error:'POST required'},405);
       }
-
-      if (path === "/login-send-code" && request.method === "POST") return await loginSendCode(env);
-      if (path === "/login-submit-code" && request.method === "POST") {
+      if(path==='/collector/check')return json({ok:true,schema:await inspectSchema(env,true)});
+      if(path==='/collector/status'){
+        const schema=await inspectSchema(env),state=await sessionState(env);
+        const batches=schema.ready?await sbGet(env,'meta_realtime_batch?select=id,schedule_date,wave,camp_code,camp_name,status,worker_count,last_polled_at,last_error,expected_rounds&order=last_polled_at.desc.nullslast&limit=100'):[];
+        return json({ok:true,version:BUILD_VERSION,state:publicState(state),schema,batches,
+          batch_summary:{total:batches.length,polled:batches.filter(b=>b.last_polled_at).length,
+            empty:batches.filter(b=>b.last_error?.startsWith('META_EMPTY_WORKERS')).length,
+            errors:batches.filter(b=>b.status==='error').length},
+          warnings:[...optionalWarnings.values()]});
+      }
+      if(path==='/collector/run'){
+        const result=await runCollector(env,true);
+        return json(result,result.ok?200:(result.error==='SCHEMA_VALIDATION_FAILED'?409:502));
+      }
+      if(path==='/login-send-code'){
+        const response=await loginSendCode(env);
+        // srcdoc has the parent page's base URL; make the form submit to this Worker.
+        return html((await response.text()).replace('action="/login-submit-code"','action="'+esc(url.origin)+'/login-submit-code"'),response.status);
+      }
+      if(path==='/login-submit-code'&&request.method==='POST'){
         const response=await loginSubmitCode(request,env);
         if(response.ok&&ctx?.waitUntil)ctx.waitUntil(runCollector(env,true).catch(e=>console.error('Post-login collection failed',e.message)));
         return response;
       }
-      if (path === "/test-db") return await testDb(env);
-
-      return json({
-        ok: true,
-        message: "TO:NEST META realtime collector",
-        endpoints: [
-          "/health",
-          "/collector/run",
-          "/collector/status",
-          "/login-send-code",
-          "/login-submit-code",
-          "/test-db"
-        ]
-      });
-    } catch (e) {
-      const message = String(e?.message || e);
-      console.error("TONEST META WORKER ERROR", message, e?.stack || "");
-      return json({ ok:false, error:message }, Number(e?.status||500));
-    }
+      if(path==='/test-db')return await testDb(env);
+      if(path==='/')return json({ok:true,service:'tonest-meta-collector',version:BUILD_VERSION});
+      return json({ok:false,error:'Not found'},404);
+    }catch(e){console.error('TONEST META',e.message);return json({ok:false,error:String(e.message||e).slice(0,700),code:e.code||null},Number(e.status)>=400&&Number(e.status)<600?Number(e.status):500);}
   },
-
-  async scheduled(event, env, ctx) {
-    ctx.waitUntil(
-      runCollector(env).catch(async e => {
-        const message = String(e?.message || e);
-        console.error("TONEST META CRON ERROR", message);
-        try {
-          await sbPatch(env, "meta_backend_state?id=eq.1", {
-            status: "error",
-            last_error: `collector cron: ${message.slice(0,300)}`,
-            updated_at: new Date().toISOString()
-          });
-        } catch {}
-      })
-    );
+  async scheduled(event,env,ctx){
+    const isKeepalive=String(event?.cron||'')==='*/5 * * * *';
+    if(isKeepalive){
+      ctx.waitUntil((async()=>{
+        const state=await sessionState(env);
+        if(!state?.cookie_bundle)return;
+        const cookies=parseCookieBundle(state.cookie_bundle);
+        await heartbeat(env,cookies);
+      })().catch(e=>console.error('TONEST SESSION HEARTBEAT',e.message)));
+    }else{
+      ctx.waitUntil(runCollector(env).catch(e=>console.error('TONEST META CRON',e.message)));
+    }
   }
 };
-
 export default {
   async fetch(request,env,ctx){return corsResponse(await worker.fetch(request,env,ctx),request);},
   scheduled:worker.scheduled
