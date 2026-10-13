@@ -344,8 +344,23 @@ function parseCookieBundle(bundle) {
   return map;
 }
 
-function cookieHeader(map) {
+function cookieHeader(map, url = META_WORKER_URL) {
+  if (typeof map?.header === 'function') return map.header(url);
   return [...map.entries()].map(([k, v]) => `${k}=${v}`).join("; ");
+}
+function cookiesFromState(state) {
+  let cookies;
+  if (Array.isArray(state?.cookie_jar) && state.cookie_jar.length) {
+    cookies = new CookieJar(state.cookie_jar);
+  } else {
+    const original = parseCookieBundle(state?.cookie_bundle || '');
+    cookies = new CookieJar([...original.entries()].map(([name,value]) => ({
+      name,value,domain:'fly.coupang.com',path:'/',hostOnly:true,secure:true
+    })));
+  }
+  cookies.originalBundle = state?.cookie_bundle || '';
+  cookies.generation = state?.session_generation ?? null;
+  return cookies;
 }
 
 function splitSetCookie(raw) {
@@ -353,7 +368,8 @@ function splitSetCookie(raw) {
   return String(raw).split(/,(?=[^;,]+=)/g);
 }
 
-function absorbSetCookies(map, response) {
+function absorbSetCookies(map, response, requestUrl = META_WORKER_URL) {
+  if (typeof map?.absorb === 'function') return map.absorb(response, requestUrl);
   const lines = typeof response.headers.getSetCookie === "function"
     ? response.headers.getSetCookie()
     : splitSetCookie(response.headers.get("set-cookie"));
@@ -371,8 +387,8 @@ async function metaPage(cookies,url,payload){
   const response=await fetch(url,{method:'POST',redirect:'manual',signal:AbortSignal.timeout(20000),headers:{
     accept:'application/json','accept-language':'ko-KR','content-type':'application/json;charset=UTF-8',
     origin:'https://fly.coupang.com',referer:FLY_REALTIME,'user-agent':UA,
-    'x-coupang-accept-language':'ko-KR','x-requested-with':'XMLHttpRequest',cookie:cookieHeader(cookies)},body:JSON.stringify(payload)});
-  absorbSetCookies(cookies,response);
+    'x-coupang-accept-language':'ko-KR','x-requested-with':'XMLHttpRequest',cookie:cookieHeader(cookies,url)},body:JSON.stringify(payload)});
+  absorbSetCookies(cookies,response,url);
   const raw=await response.text();let body=null;try{body=JSON.parse(raw);}catch{}
   const content=Array.isArray(body?.data?.content)||Array.isArray(body?.content)||Array.isArray(body?.data?.data?.content);
   return {status:response.status,raw,body,success:response.status===200&&content};
@@ -393,8 +409,8 @@ async function metaPost(cookies,url,payload){
 async function metaGet(cookies,url) {
   const response=await fetch(url,{method:'GET',redirect:'manual',signal:AbortSignal.timeout(20000),headers:{
     accept:'application/json','accept-language':'ko-KR',referer:FLY_REALTIME,'user-agent':UA,
-    'x-coupang-accept-language':'ko-KR','x-requested-with':'XMLHttpRequest',cookie:cookieHeader(cookies)}});
-  absorbSetCookies(cookies,response);
+    'x-coupang-accept-language':'ko-KR','x-requested-with':'XMLHttpRequest',cookie:cookieHeader(cookies,url)}});
+  absorbSetCookies(cookies,response,url);
   const raw=await response.text();let body=null;try{body=JSON.parse(raw);}catch{}
   if([301,302,303,307,308,401,403].includes(response.status)||!/json/i.test(response.headers.get('content-type')||'')&&body==null){
     throw Object.assign(new Error('META_AUTH_EXPIRED or response not JSON /v1/my-vendor HTTP '+response.status),{metaAuthRequired:true,status:response.status});
@@ -439,15 +455,25 @@ async function sessionState(env) {
 }
 
 async function saveSession(env, cookies, status = "active", http = 200, error = null) {
-  const patch = {
-    cookie_bundle: cookieHeader(cookies),
-    status,
-    last_http_status: http,
-    last_error: error,
-    updated_at: new Date().toISOString()
-  };
-  if (!error) patch.last_success_at = new Date().toISOString();
-  await sbPatch(env, "meta_backend_state?id=eq.1", patch);
+  const current = new Date().toISOString();
+  const patch = {status,last_http_status:http,last_error:error,updated_at:current};
+  if (status === 'active' && !error) {
+    patch.cookie_bundle = cookieHeader(cookies,META_WORKER_URL);
+    if (typeof cookies?.dump === 'function') patch.cookie_jar = cookies.dump();
+    patch.last_success_at = current;
+    patch.session_renewed_at = current;
+  }
+  // A background request must never overwrite a cookie rotated by a
+  // different Cron execution or a freshly completed user login.
+  let query = 'meta_backend_state?id=eq.1';
+  if (Object.hasOwn(cookies || {}, 'originalBundle')) {
+    query += '&cookie_bundle=eq.' + encodeURIComponent(cookies.originalBundle);
+    if (cookies.generation != null) query += '&session_generation=eq.' + encodeURIComponent(cookies.generation);
+  }
+  const rows = await sbPatch(env,query,patch);
+  if (Array.isArray(rows) && rows.length === 0) return false; // stale snapshot
+  if (patch.cookie_bundle) cookies.originalBundle = patch.cookie_bundle;
+  return true;
 }
 
 // ============================================================================
@@ -1384,9 +1410,8 @@ async function loginSubmitCode(request, env) {
 </body></html>`, 422);
   }
 
-  const flyBundle = jar.header(FLY_REALTIME);
-  const cookies = parseCookieBundle(flyBundle);
-  await saveSession(env, cookies, "active", 200, null);
+  // Authenticated login owns the fresh cookie jar and replaces stale state.
+  await saveSession(env, jar, "active", 200, null);
 
   return html(`<!doctype html><html lang="ko"><meta charset="utf-8"><body style="font-family:Arial;background:#f3f8f7;padding:28px">
 <div style="max-width:600px;margin:auto;background:#fff;padding:24px;border-radius:18px;border:1px solid #dce7e5">
@@ -1408,7 +1433,7 @@ async function testDb(env) {
   await saveSession(
     env,
     cookies,
-    response.success ? "active" : "expired",
+    response.success ? "active" : ([401,403,302,303,307,308].includes(response.status) ? "expired" : "error"),
     response.status,
     response.success ? null : `DB cookie META ${response.status}: ${response.raw.slice(0,250)}`
   );
@@ -1497,7 +1522,7 @@ function advanceProgress(prev, d, ret, fb, batch, now) {
     completionMethod,completionDetectedAt,deliveryDone,returnDone,freshbagDone,totalRemaining,reopenedByScan:reopened};
 }
 
-const BUILD_VERSION='2026-10-13-chunwoo-all-batch-keepalive-v7';
+const BUILD_VERSION='2026-10-13-cookie-jar-cas-v8';
 const schemaResults=new Map();
 const masterResults=new Map();
 const singleFlights=new Map();
@@ -1641,7 +1666,7 @@ async function runCollectorOnce(env,force){
   if(!state?.cookie_bundle)return {ok:false,error:'META_SESSION_MISSING',at:nowIso(),results:[]};
   // Database contract is exposed on /collector/check. Do not spend six extra
   // Supabase subrequests validating every minute inside the free-plan collector.
-  const cookies=parseCookieBundle(state.cookie_bundle),results=[];
+  const cookies=cookiesFromState(state),results=[];
   let ensured=[],successes=0;
   try{
     ensured=await ensureBatches(env,cookies,[]);
@@ -1788,7 +1813,7 @@ const worker={
       ctx.waitUntil((async()=>{
         const state=await sessionState(env);
         if(!state?.cookie_bundle)return;
-        const cookies=parseCookieBundle(state.cookie_bundle);
+        const cookies=cookiesFromState(state);
         await heartbeat(env,cookies);
       })().catch(e=>console.error('TONEST SESSION HEARTBEAT',e.message)));
     }else{
