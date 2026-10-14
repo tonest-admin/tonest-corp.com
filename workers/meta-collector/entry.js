@@ -461,7 +461,7 @@ async function saveSession(env, cookies, status = "active", http = 200, error = 
     patch.cookie_bundle = cookieHeader(cookies,META_WORKER_URL);
     if (typeof cookies?.dump === 'function') patch.cookie_jar = cookies.dump();
     patch.last_success_at = current;
-    patch.session_renewed_at = current;
+    // session_renewed_at is updated only after a real OAuth renewal.
   }
   // A background request must never overwrite a cookie rotated by a
   // different Cron execution or a freshly completed user login.
@@ -1336,8 +1336,7 @@ async function queryMetaWithJar(env, jar) {
   const kp = kstParts();
   const wave = kp.hour < 12 ? "WAVE1" : "WAVE2";
   const workDate = wave === "WAVE1" && kp.hour < 12 ? kp.date : kp.date;
-  const cookies = parseCookieBundle(jar.header(FLY_REALTIME));
-  return await metaPost(cookies, META_CAMP_URL, workerPayload(codes, wave, workDate));
+  return await metaPost(jar, META_CAMP_URL, workerPayload(codes, wave, workDate));
 }
 
 function otpPage(masked, token) {
@@ -1448,6 +1447,69 @@ async function testDb(env) {
   }, response.success ? 200 : 422);
 }
 
+// Authentication parity with MAROOWELL: OAuth redirect renewal and MFA-aware
+// credential fallback. No delivery table, rounds, or UI changes here.
+function authFormRequired(html, url) {
+  const forms=parseForms(html||'',url||AUTH_START);
+  return Boolean(chooseMfaTypeForm(forms)||chooseOtpForm(forms));
+}
+async function refreshOAuthSession(env, state, force=false) {
+  if(!state?.cookie_bundle && !state?.cookie_jar) return {ok:false,stage:'missing-session'};
+  const when=Date.parse(state.session_renewed_at||'')||0;
+  if(!force && state.status==='active' && when && Date.now()-when<20*60*1000) return {ok:true,skipped:'recently-renewed'};
+  const jar=cookiesFromState(state);
+  try {
+    const navigation=await followBrowserTrace(jar,AUTH_START,{});
+    const result=await queryMetaWithJar(env,jar);
+    if(result.success){
+      const saved=await saveSession(env,jar,'active',200,null);
+      if(saved){
+        await sbPatch(env,'meta_backend_state?id=eq.1&cookie_bundle=eq.'+encodeURIComponent(jar.originalBundle),{session_renewed_at:new Date().toISOString()});
+      }
+      return {ok:true,stage:'silent-oauth-renew',saved};
+    }
+    if(authFormRequired(navigation.body,navigation.url)) return {ok:false,stage:'mfa-required',mfaRequired:true};
+  }catch(e){console.error('TO:NEST silent OAuth renew',String(e?.message||e).slice(0,200));}
+  return {ok:false,stage:'silent-renew-unavailable'};
+}
+async function recoverMetaSession(env,state) {
+  const existing=await refreshOAuthSession(env,state,true);
+  if(existing.ok || existing.mfaRequired) return existing;
+  if(!text(env.META_ID)||!text(env.META_PW)) return {ok:false,stage:'missing-credentials'};
+  // Maroowell tries a NEW cookie jar after the previous bot/security cookies fail.
+  // Never bypass or automatically enter a second factor.
+  const fresh=new CookieJar();
+  try {
+    const credential=await credentialSubmit(env,fresh);
+    if(authFormRequired(credential.body,credential.url))
+      return {ok:false,stage:'mfa-required',mfaRequired:true};
+    const result=await queryMetaWithJar(env,fresh);
+    if(!result.success) return {ok:false,stage:'credential-login-incomplete',status:result.status};
+    // Compare-and-swap the session originally loaded, so a concurrent browser
+    // login or collector cannot be overwritten by this older recovery attempt.
+    fresh.originalBundle=state.cookie_bundle;
+    fresh.generation=state.session_generation??null;
+    const saved=await saveSession(env,fresh,'active',200,null);
+    if(saved){
+      await sbPatch(env,'meta_backend_state?id=eq.1&cookie_bundle=eq.'+encodeURIComponent(fresh.originalBundle),{session_renewed_at:new Date().toISOString()});
+    }
+    return {ok:true,stage:'fresh-credential-renew',saved};
+  } catch(e){return {ok:false,stage:'credential-recover-error',error:String(e?.message||e).slice(0,180)};}
+}
+async function maintainMetaSession(env) {
+  const state=await sessionState(env);
+  if(!state?.cookie_bundle&&!state?.cookie_jar)return {ok:false,stage:'session-missing'};
+  if(state.status==='expired') return await recoverMetaSession(env,state);
+  const renewed=await refreshOAuthSession(env,state,false);
+  if(renewed.ok&&!renewed.skipped)return renewed;
+  if(renewed.mfaRequired)return renewed;
+  // If renewal failed because OAuth is transiently unavailable, keep known
+  // working cookies, and avoid erasing the session on a single temporary error.
+  const latest=await sessionState(env);
+  if(latest?.status==='expired')return await recoverMetaSession(env,latest);
+  return {ok:true,stage:renewed.skipped||'deferred-oauth-renewal'};
+}
+
 // ============================================================================
 // Worker entry
 // ============================================================================
@@ -1522,7 +1584,7 @@ function advanceProgress(prev, d, ret, fb, batch, now) {
     completionMethod,completionDetectedAt,deliveryDone,returnDone,freshbagDone,totalRemaining,reopenedByScan:reopened};
 }
 
-const BUILD_VERSION='2026-10-13-cookie-jar-cas-v8';
+const BUILD_VERSION='2026-10-14-maroowell-auth-parity-v9';
 const schemaResults=new Map();
 const masterResults=new Map();
 const singleFlights=new Map();
@@ -1663,7 +1725,8 @@ async function runCollectorOnce(env,force){
   requireConfig(env);
   const state=await sessionState(env);
   if(state?.collector_paused)return {ok:true,paused:true,at:nowIso(),results:[]};
-  if(!state?.cookie_bundle)return {ok:false,error:'META_SESSION_MISSING',at:nowIso(),results:[]};
+  if(!state?.cookie_bundle&&!state?.cookie_jar)return {ok:false,error:'META_SESSION_MISSING',at:nowIso(),results:[]};
+  if(state.status==='expired')return {ok:false,error:'META_AUTH_REQUIRED',recovery:'next maintenance cron',at:nowIso(),results:[]};
   // Database contract is exposed on /collector/check. Do not spend six extra
   // Supabase subrequests validating every minute inside the free-plan collector.
   const cookies=cookiesFromState(state),results=[];
@@ -1812,9 +1875,9 @@ const worker={
     if(isKeepalive){
       ctx.waitUntil((async()=>{
         const state=await sessionState(env);
-        if(!state?.cookie_bundle)return;
-        const cookies=cookiesFromState(state);
-        await heartbeat(env,cookies);
+        if(!state?.cookie_bundle&&!state?.cookie_jar)return;
+        const result=await maintainMetaSession(env);
+        if(!result.ok)console.error('TONEST SESSION MAINTENANCE',JSON.stringify(result));
       })().catch(e=>console.error('TONEST SESSION HEARTBEAT',e.message)));
     }else{
       ctx.waitUntil(runCollector(env).catch(e=>console.error('TONEST META CRON',e.message)));

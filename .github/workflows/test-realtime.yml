@@ -35,7 +35,7 @@ jobs:
           python - <<'PYVERIFY'
           import json, urllib.request, time
           url='https://meta-direct-poc.tonest-admin.workers.dev/health'
-          expected='2026-10-13-cookie-jar-cas-v8'
+          expected='2026-10-14-maroowell-auth-parity-v9'
           for attempt in range(5):
               try:
                   with urllib.request.urlopen(url, timeout=20) as response:
