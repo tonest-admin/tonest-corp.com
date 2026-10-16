@@ -746,23 +746,28 @@ async function sendMfaCode(env) {
 }
 
 async function tonestAuthCampCodes(env, jar) {
-  const key=backendKey(env);
-  const response=await fetch(supabaseUrl(env)+'/rest/v1/meta_realtime_batch?select=meta_camp_codes&camp_code=eq.__ALL__&order=schedule_date.desc&limit=1', {
-    headers:{apikey:key,authorization:'Bearer '+key}
-  });
-  if (response.ok) {
-    const rows=await response.json();
-    const codes=rows?.[0]?.meta_camp_codes;
-    if (Array.isArray(codes)&&codes.length) return [...new Set(codes.map(x=>String(x).trim().toUpperCase()).filter(Boolean))].slice(0,20);
-  }
   const vendor=await requestWithJar(jar,'https://fly.coupang.com/v1/my-vendor',{
     headers:{accept:'application/json','x-requested-with':'XMLHttpRequest',referer:FLY_REALTIME}
   });
-  if (!vendor.ok) throw new Error('TO:NEST vendor lookup failed HTTP '+vendor.status);
-  const data=await vendor.json();
-  const codes=data?.data?.contractedCampCodes;
-  if(!Array.isArray(codes)||!codes.length) throw new Error('TO:NEST contractedCampCodes not found');
-  return [...new Set(codes.map(x=>String(x).trim().toUpperCase()).filter(Boolean))].slice(0,20);
+  if(vendor.ok){
+    const data=await vendor.json();
+    const codes=data?.data?.contractedCampCodes;
+    if(Array.isArray(codes)&&codes.length)
+      return [...new Set(codes.map(x=>String(x).trim().toUpperCase()).filter(Boolean))].slice(0,20);
+  }
+  // If a session is still initializing, the latest TO:NEST batch can be
+  // used only as a diagnostic fallback. Never use MAROOWELL fixed codes.
+  const key=backendKey(env);
+  const response=await fetch(supabaseUrl(env)+'/rest/v1/meta_realtime_batch?select=meta_camp_codes&camp_code=eq.__ALL__&order=schedule_date.desc&limit=1',{
+    headers:{apikey:key,authorization:'Bearer '+key}
+  });
+  if(response.ok){
+    const rows=await response.json();
+    const codes=rows?.[0]?.meta_camp_codes;
+    if(Array.isArray(codes)&&codes.length)
+      return [...new Set(codes.map(x=>String(x).trim().toUpperCase()).filter(Boolean))].slice(0,20);
+  }
+  throw new Error('TO:NEST contractedCampCodes unavailable');
 }
 
 async function queryMeta(env,jar) {
@@ -925,7 +930,7 @@ async function loginSubmitCode(request, env) {
 <p><b>DB 저장:</b> meta_backend_state.cookie_bundle 갱신 완료</p>
 <p><b>FLY 쿠키:</b> ${esc(names.join(", "))}</p>
 <p>Login verified. Realtime collection restart requested.</p>
-<p><a href="https://tonest-corp.com/realtime">Return to MAROOWELL realtime</a></p>
+<p><a href="https://tonest-corp.com/realtime">Return to TO:NEST realtime</a></p>
 </div></body></html>`);
 }
 
