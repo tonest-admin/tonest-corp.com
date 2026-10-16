@@ -454,6 +454,21 @@ async function sessionState(env) {
   return rows?.[0] || null;
 }
 
+// Identical atomic session replacement semantics to MAROOWELL.
+async function replaceBackendSession(env, jar, statusCode = 200) {
+  const bundle = cookieHeader(jar, META_WORKER_URL);
+  const cookies = typeof jar?.dump === 'function'
+    ? jar.dump()
+    : [...jar.entries()].map(([name, value]) => ({name,value,domain:'fly.coupang.com',path:'/',hostOnly:true,secure:true}));
+  const generation = await sbPost(env,'rpc/meta_replace_backend_session',{
+    p_cookie_bundle:bundle,p_cookie_jar:cookies,p_http_status:statusCode
+  });
+  if (generation == null || !Number.isFinite(Number(generation))) {
+    throw new Error('META_SESSION_REPLACE_FAILED: RPC returned no session generation');
+  }
+  return Number(generation);
+}
+
 async function saveSession(env, cookies, status = "active", http = 200, error = null) {
   const current = new Date().toISOString();
   const patch = {status,last_http_status:http,last_error:error,updated_at:current};
@@ -1410,7 +1425,7 @@ async function loginSubmitCode(request, env) {
   }
 
   // Authenticated login owns the fresh cookie jar and replaces stale state.
-  await saveSession(env, jar, "active", 200, null);
+  await replaceBackendSession(env, jar, 200);
 
   return html(`<!doctype html><html lang="ko"><meta charset="utf-8"><body style="font-family:Arial;background:#f3f8f7;padding:28px">
 <div style="max-width:600px;margin:auto;background:#fff;padding:24px;border-radius:18px;border:1px solid #dce7e5">
@@ -1462,11 +1477,8 @@ async function refreshOAuthSession(env, state, force=false) {
     const navigation=await followBrowserTrace(jar,AUTH_START,{});
     const result=await queryMetaWithJar(env,jar);
     if(result.success){
-      const saved=await saveSession(env,jar,'active',200,null);
-      if(saved){
-        await sbPatch(env,'meta_backend_state?id=eq.1&cookie_bundle=eq.'+encodeURIComponent(jar.originalBundle),{session_renewed_at:new Date().toISOString()});
-      }
-      return {ok:true,stage:'silent-oauth-renew',saved};
+      const generation=await replaceBackendSession(env,jar,200);
+      return {ok:true,stage:'silent-oauth-renew',generation};
     }
     if(authFormRequired(navigation.body,navigation.url)) return {ok:false,stage:'mfa-required',mfaRequired:true};
   }catch(e){console.error('TO:NEST silent OAuth renew',String(e?.message||e).slice(0,200));}
@@ -1489,11 +1501,8 @@ async function recoverMetaSession(env,state) {
     // login or collector cannot be overwritten by this older recovery attempt.
     fresh.originalBundle=state.cookie_bundle;
     fresh.generation=state.session_generation??null;
-    const saved=await saveSession(env,fresh,'active',200,null);
-    if(saved){
-      await sbPatch(env,'meta_backend_state?id=eq.1&cookie_bundle=eq.'+encodeURIComponent(fresh.originalBundle),{session_renewed_at:new Date().toISOString()});
-    }
-    return {ok:true,stage:'fresh-credential-renew',saved};
+    const generation=await replaceBackendSession(env,fresh,200);
+    return {ok:true,stage:'fresh-credential-renew',generation};
   } catch(e){return {ok:false,stage:'credential-recover-error',error:String(e?.message||e).slice(0,180)};}
 }
 async function maintainMetaSession(env) {
@@ -1584,7 +1593,7 @@ function advanceProgress(prev, d, ret, fb, batch, now) {
     completionMethod,completionDetectedAt,deliveryDone,returnDone,freshbagDone,totalRemaining,reopenedByScan:reopened};
 }
 
-const BUILD_VERSION='2026-10-14-maroowell-auth-parity-v9';
+const BUILD_VERSION='2026-10-17-maroowell-atomic-session-v10';
 const schemaResults=new Map();
 const masterResults=new Map();
 const singleFlights=new Map();
