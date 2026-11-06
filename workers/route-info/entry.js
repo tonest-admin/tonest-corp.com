@@ -637,17 +637,17 @@ export default {
         return json(request, { profile: auth.profile, canEdit: auth.canEdit });
       }
       if (path === "/routes") {
-        if (request.method === "GET") return listRoutes(request, env, url);
-        if (request.method === "POST") return createRoute(request, env);
+        if (request.method === "GET") return await listRoutes(request, env, url);
+        if (request.method === "POST") return await createRoute(request, env);
         return json(request, { error: "Method Not Allowed" }, 405);
       }
       const match = path.match(/^\/routes\/(\d+)$/);
       if (match) {
-        if (request.method === "PATCH") return updateRoute(request, env, Number(match[1]));
-        if (request.method === "DELETE") return softDeleteRoute(request, env, Number(match[1]));
+        if (request.method === "PATCH") return await updateRoute(request, env, Number(match[1]));
+        if (request.method === "DELETE") return await softDeleteRoute(request, env, Number(match[1]));
         return json(request, { error: "Method Not Allowed" }, 405);
       }
-      if (path === "/from-map" && request.method === "POST") return fromMap(request, env);
+      if (path === "/from-map" && request.method === "POST") return await fromMap(request, env);
       if ((path === "/sync" || path === "/sync-one") && request.method === "POST") {
         await requireUser(request, env, true);
         return json(request, { ok: true, disabled: true, message: "동기화 버튼은 사용하지 않습니다. 저장 시 자동 연동됩니다." });

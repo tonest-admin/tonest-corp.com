@@ -1,0 +1,55 @@
+name: Deploy TO:NEST route-info Worker
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'workers/route-info/**'
+      - 'tests/route-info-auth.test.mjs'
+      - '.github/workflows/deploy-route-info.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: tonest-route-info-deploy-main
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify Worker code syntax
+        run: node --check workers/route-info/entry.js
+      - name: Test auth errors, CORS and route handlers
+        run: node --test tests/route-info-auth.test.mjs
+      - name: Deploy route-info Worker keeping existing secrets
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: 5fa38cebad5fe848d09511005fccae1c
+          wranglerVersion: '4.149.0'
+          command: deploy --config workers/route-info/wrangler.toml --keep-vars
+      - name: Verify deployed route-info Worker
+        run: |
+          python - <<'PY'
+          import json, urllib.request
+          base='https://route-info.tonest-admin.workers.dev'
+          origin='https://tonest-corp.com'
+          try:
+              with urllib.request.urlopen(base+'/health',timeout=20) as resp:
+                  data=json.load(resp)
+              assert data.get('service')=='tonest-route-info-v4-unified-pk',data
+              req=urllib.request.Request(base+'/routes?include_inactive=1',headers={'Origin':origin})
+              try:
+                  urllib.request.urlopen(req,timeout=20)
+                  raise AssertionError('Unauthenticated route returned 200')
+              except urllib.error.HTTPError as err:
+                  assert err.code==401,(err.code,err.read()[:200])
+                  assert err.headers.get('Access-Control-Allow-Origin')==origin
+              print('Deployed health OK; /routes 401 JSON+CORS OK')
+          except Exception as ex:
+              raise SystemExit(str(ex))
+          PY
