@@ -427,11 +427,20 @@ async function fetchMyVendor(cookies){
 }
 async function fetchMetaByCodeChunks(cookies,url,codes,wave,workDate,pddTime=null){
   const rows=[];const used=uniq(codes);
-  // CHUNWOO's 20-code chunks prevent mixed-vendor and invalid camp aliases.
+  // Never prune a worker on an incomplete META page. Walk every page of each
+  // camp chunk before reporting a successful, authoritative snapshot.
   for(let i=0;i<used.length;i+=20){
-    const response=await metaPost(cookies,url,workerPayload(used.slice(i,i+20),wave,workDate,pddTime));
-    if(!response.success)throw metaFailure(response,'META '+url.split('/').at(-1));
-    rows.push(...metaContent(response.body));
+    const chunk=used.slice(i,i+20);
+    let completed=false;
+    for(let page=0;page<20;page++){
+      const payload={...workerPayload(chunk,wave,workDate,pddTime),page};
+      const response=await metaPost(cookies,url,payload);
+      if(!response.success)throw metaFailure(response,'META '+url.split('/').at(-1));
+      const part=metaContent(response.body);
+      rows.push(...part);
+      if(part.length<payload.size){completed=true;break;}
+    }
+    if(!completed)throw new Error('META_PAGINATION_INCOMPLETE: more than 20 pages; preserving previous workers');
   }
   return {success:true,status:200,body:{data:{content:rows}},count:rows.length};
 }
@@ -949,6 +958,25 @@ async function processBatch(env, cookies, batch, directory) {
       };
     });
     await sbUpsert(env, "meta_realtime_history", historyRows, "batch_id,meta_worker_key,sample_minute");
+  }
+
+  // Earlier route sets create different fallback keys for the same anonymous
+  // META worker. Retire old current rows ONLY after a complete, non-empty
+  // poll succeeds; history remains intact. Completed drivers retain +1 hour.
+  const pruneBeforeMs=Date.now()-120000;
+  const finishedBeforeMs=Date.now()-3600000;
+  const staleCandidate=rows.length>0 && prevRows.some(r=>
+    !byKey.has(r.meta_worker_key) &&
+    Number.isFinite(tsMs(r.last_seen_at)) &&
+    tsMs(r.last_seen_at)<pruneBeforeMs &&
+    (!r.work_completed_at || tsMs(r.work_completed_at)<finishedBeforeMs)
+  );
+  if(staleCandidate){
+    const cutoff=encodeURIComponent(kstIsoAt(pruneBeforeMs));
+    const completedCutoff=encodeURIComponent(kstIsoAt(finishedBeforeMs));
+    await sbDelete(env,
+      `meta_realtime_current?batch_id=eq.${batch.id}&last_seen_at=lt.${cutoff}&or=(work_completed_at.is.null,work_completed_at.lt.${completedCutoff})`
+    );
   }
 
   const stateRows = await sbGet(env,

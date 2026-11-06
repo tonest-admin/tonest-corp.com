@@ -183,6 +183,21 @@ function doneAt(r){
   return round>=expected&&r['round'+expected+'_delivery_started_at']?(r.work_completed_at||r.all_completed_at||null):null;
 }
 function isStarted(r){return !!r.scan_started_at||Number(r.delivery_scanned)>0||Number(r.delivery_completed)>0||Number(r.delivery_impossible)>0||Number(r.delivery_pdd_miss)>0;}
+// META fallback keys can change when routes are reassigned. Show the
+// last successful poll as the live snapshot; retain the one-hour completion
+// grace and do not drop data on failed/empty/error polls.
+function latestSuccessfulSnapshotRows(rows,batches){
+  const byBatch=new Map((batches||[]).map(b=>[b.id,b]));
+  return (rows||[]).filter(r=>{
+    const b=byBatch.get(r.batch_id);
+    if(!b||b.status==='finalized'||!['collecting','completion_candidate'].includes(b.status)||b.last_error||!b.last_polled_at)return true;
+    const seen=parseKst(r.last_seen_at),polled=parseKst(b.last_polled_at);
+    if(!seen||!polled)return true;
+    if(seen.getTime()>=polled.getTime()-15000)return true;
+    const completed=parseKst(r.work_completed_at);
+    return !!completed&&Date.now()-completed.getTime()<3600000;
+  });
+}
 function dedupeRows(rows){
   const map=new Map();for(const row of rows){
     const id=row.driver_pk!=null?'pk:'+row.driver_pk:row.coupang_id?'id:'+stableKey(row.coupang_id):'key:'+stableKey(row.meta_worker_key||row.driver_name);
@@ -302,7 +317,7 @@ async function queryAll(){
     const merged=[...mergeFresh(currentRows,freshRows),...finalRows.filter(r=>!currentKeys.has(r.batch_id+'|'+r.meta_worker_key))];
     const byBatch=new Map();for(const r of merged){if(!byBatch.has(r.batch_id))byBatch.set(r.batch_id,[]);byBatch.get(r.batch_id).push(r);}
     const now=new Date();S.batches=batches.filter(b=>{const until=visibleUntil(b,byBatch.get(b.id)||[]);return !until||now<until;});
-    const visible=new Set(S.batches.map(b=>b.id));S.rows=dedupeRows(merged.filter(r=>visible.has(r.batch_id)));S.scheduleRows=schedules;
+    const visible=new Set(S.batches.map(b=>b.id));S.rows=dedupeRows(latestSuccessfulSnapshotRows(merged.filter(r=>visible.has(r.batch_id)),S.batches));S.scheduleRows=schedules;
     S.camps=buildCamps();S.selected=new Set([...S.selected].filter(k=>S.camps.some(c=>c.key===k)));S.lastQueryAt=Date.now();renderAll();
     const errors=S.batches.filter(b=>b.last_error),last=S.batches.map(b=>b.last_polled_at).filter(Boolean).sort().at(-1);
     const state=S.collectorPaused?'\uc218\uc9d1 \uc911\uc9c0':S.collectorError?'\uc218\uc9d1\uae30 \uc5f0\uacb0 \uc624\ub958':S.collectorState?.status==='active'?'\uc218\uc9d1 \ucf1c\uc9d0':'META \uc0c1\ud0dc \ud655\uc778 \ud544\uc694';
