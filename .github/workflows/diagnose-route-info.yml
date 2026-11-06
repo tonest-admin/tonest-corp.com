@@ -1,0 +1,45 @@
+name: Diagnose TO:NEST route-info Worker crash
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/diagnose-route-info.yml']
+permissions:
+  contents: read
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: 5fa38cebad5fe848d09511005fccae1c
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Capture sanitized route-info exception
+        shell: bash
+        run: |
+          set -uo pipefail
+          npm install --no-save wrangler@4.149.0 >/dev/null 2>&1
+          timeout 40s ./node_modules/.bin/wrangler tail route-info --format=json --status error > /tmp/route-tail.jsonl 2>/tmp/route-tail.stderr &
+          tailpid=$!
+          sleep 12
+          curl -s -o /dev/null -w 'GET /routes HTTP %{http_code}\n' --max-time 15 'https://route-info.tonest-admin.workers.dev/routes?include_inactive=1' -H 'Origin: https://tonest-corp.com' || true
+          curl -s -o /dev/null -w 'GET /me HTTP %{http_code}\n' --max-time 15 'https://route-info.tonest-admin.workers.dev/me' -H 'Origin: https://tonest-corp.com' || true
+          wait "$tailpid" || true
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          stderr=Path('/tmp/route-tail.stderr').read_text(errors='replace')
+          print('TAIL_STATUS:',stderr[-1500:])
+          raw=Path('/tmp/route-tail.jsonl').read_text(errors='replace')
+          for line in raw.splitlines()[-12:]:
+              try:
+                  e=json.loads(line)
+                  out={'outcome':e.get('outcome'),'exceptions':e.get('exceptions'),'logs':[{'level':l.get('level'),'message':str(l.get('message'))[:700]} for l in e.get('logs',[])]}
+                  print('ROUTE_EXCEPTION:',json.dumps(out,ensure_ascii=False)[:3000])
+              except Exception:
+                  print('TAIL_DIAGNOSTIC:',line[:180])
+          PY
