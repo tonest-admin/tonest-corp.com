@@ -18,6 +18,41 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Inspect original deployed route-info handler (no secret values)
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -sfS --max-time 20 \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+            -D /tmp/route-headers \
+            -o /tmp/route-content \
+            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/route-info/content/v2"
+          python - <<'PY'
+          from pathlib import Path
+          from email.parser import BytesParser
+          from email.policy import default
+          raw=Path('/tmp/route-content').read_bytes()
+          headers=Path('/tmp/route-headers').read_text(errors='replace')
+          ct=next((x.split(':',1)[1].strip() for x in headers.splitlines() if x.lower().startswith('content-type:')),'text/javascript')
+          if ct.startswith('multipart/'):
+              email=BytesParser(policy=default).parsebytes(('Content-Type: '+ct+'\r\nMIME-Version: 1.0\r\n\r\n').encode()+raw)
+              parts=[part for part in email.walk() if part.get_filename() and part.get_filename().endswith(('.js','.mjs'))]
+              print('DOWNLOADED_FILES:',[(p.get_filename(),len(p.get_payload(decode=True) or b'')) for p in parts])
+              source=(parts[0].get_payload(decode=True) or b'').decode('utf-8','replace') if parts else ''
+          else:
+              source=raw.decode('utf-8','replace')
+          lines=source.splitlines()
+          print('SOURCE_LINE_COUNT:',len(lines))
+          for pattern in ('function httpError','function getLoggedInUser','function requireUser','function listRoutes','export default'):
+              matches=[i for i,l in enumerate(lines) if pattern in l]
+              for i in matches[:1]:
+                  print('SOURCE_BLOCK:',pattern,'LINE:',i+1)
+                  for n in range(max(0,i-2),min(len(lines),i+13)):
+                      line=lines[n]
+                      if any(secret in line.lower() for secret in ('password','service_role','supabase_secret','api_token','secret_key')):
+                          line='[redacted configuration line]'
+                      print(str(n+1)+': '+line[:210])
+          PY
       - name: Capture sanitized route-info exception
         shell: bash
         run: |
