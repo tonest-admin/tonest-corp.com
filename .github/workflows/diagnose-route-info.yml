@@ -35,11 +35,20 @@ jobs:
           stderr=Path('/tmp/route-tail.stderr').read_text(errors='replace')
           print('TAIL_STATUS:',stderr[-1500:])
           raw=Path('/tmp/route-tail.jsonl').read_text(errors='replace')
-          for line in raw.splitlines()[-12:]:
+          decoder=json.JSONDecoder()
+          events=[]
+          while raw.strip():
+              raw=raw.lstrip()
               try:
-                  e=json.loads(line)
-                  out={'outcome':e.get('outcome'),'exceptions':e.get('exceptions'),'logs':[{'level':l.get('level'),'message':str(l.get('message'))[:700]} for l in e.get('logs',[])]}
-                  print('ROUTE_EXCEPTION:',json.dumps(out,ensure_ascii=False)[:3000])
-              except Exception:
-                  print('TAIL_DIAGNOSTIC:',line[:180])
+                  event,offset=decoder.raw_decode(raw)
+                  events.append(event)
+                  raw=raw[offset:]
+              except json.JSONDecodeError:
+                  break
+          print('CLOUDFLARE_EVENTS_CAPTURED:',len(events))
+          for e in events[-12:]:
+              out={'outcome':e.get('outcome'),
+                   'exceptions':e.get('exceptions'),
+                   'logs':[{'level':l.get('level'),'message':str(l.get('message'))[:700]} for l in e.get('logs',[])]}
+              print('ROUTE_EXCEPTION:',json.dumps(out,ensure_ascii=False)[:3000])
           PY
