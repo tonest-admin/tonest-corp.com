@@ -33,3 +33,34 @@ test("health endpoint remains available and /me sends 401",async()=>{
   assert.equal(me.status,401);
   assert.equal(me.headers.get("Access-Control-Allow-Origin"),ORIGIN);
 });
+
+test("authenticated local routes stay readable when MAROOWELL enrichment is not configured",async()=>{
+  const oldFetch=globalThis.fetch;
+  const seen=[];
+  globalThis.fetch=async(url)=>{
+    const u=String(url);
+    seen.push(u);
+    if(u.includes("/auth/v1/user")) return Response.json({id:"test-user"});
+    if(u.includes("/rest/v1/profiles?")) return Response.json([{user_id:"test-user",role:"admin",status:"active"}]);
+    if(u.includes("/rest/v1/tonest_route_info?")) return Response.json([
+      {id:21,camp:"대구3",route_code:"213A",rates:{},is_active:true},
+      {id:22,camp:"대구3",route_code:"213B",rates:{},is_active:true}
+    ]);
+    throw new Error("Unexpected upstream URL "+u);
+  };
+  try{
+    const request=new Request(ROOT+"/routes?include_inactive=1",{
+      headers:{Origin:ORIGIN,Authorization:"Bearer mock-access-token"}
+    });
+    const env={SUPABASE_URL:"https://example.supabase.co",SUPABASE_SERVICE_ROLE_KEY:"test-service-role"};
+    const response=await worker.fetch(request,env);
+    assert.equal(response.status,200);
+    assert.equal(response.headers.get("Access-Control-Allow-Origin"),ORIGIN);
+    const body=await response.json();
+    assert.equal(body.count,2);
+    assert.equal(body.maroowellStatus,"unconfigured");
+    assert.deepEqual(body.rows.map(x=>x.route_code),["213A","213B"]);
+    assert.equal(body.rows[0].has_polygon,null);
+    assert.equal(seen.length,3,"no unavailable MAROOWELL request should be made");
+  }finally{globalThis.fetch=oldFetch;}
+});

@@ -128,7 +128,12 @@ async function dbFetch(base, key, path, init = {}) {
   return payload;
 }
 async function tnFetch(env, path, init = {}) { return dbFetch(supabaseBase(env), serviceKey(env), path, init); }
-async function mwFetch(env, path, init = {}) { return dbFetch(mwBase(env), mwKey(env), path, init); }
+async function mwFetch(env, path, init = {}) {
+  if (!mwBase(env) || !mwKey(env)) {
+    throw httpError(503, "MAROOWELL DB 연동 설정이 없습니다. route-info Worker의 MAROOWELL_SUPABASE_URL과 MAROOWELL_SUPABASE_SERVICE_ROLE_KEY를 확인하세요.");
+  }
+  return dbFetch(mwBase(env), mwKey(env), path, init);
+}
 
 async function getLoggedInUser(request, env) {
   const token = bearer(request);
@@ -528,7 +533,23 @@ async function listRoutes(request, env, url) {
   if (!includeInactive) p.set("is_active", "eq.true");
   let rows = await tnFetch(env, "/rest/v1/" + TABLE + "?" + p.toString(), { method: "GET" });
   rows = Array.isArray(rows) ? rows : [];
-  await enrichHasPolygon(env, rows);
+  // Local TO:NEST data must remain readable if optional MAROOWELL polygon
+  // enrichment is unavailable or credentials have not been configured.
+  let maroowellStatus = mwBase(env) && mwKey(env) ? "connected" : "unconfigured";
+  if (maroowellStatus === "connected") {
+    try {
+      await enrichHasPolygon(env, rows);
+    } catch (error) {
+      maroowellStatus = "unavailable";
+      console.warn("TO:NEST polygon enrichment unavailable:", error?.message || String(error));
+    }
+  }
+  if (maroowellStatus !== "connected") {
+    for (const row of rows) {
+      row.has_polygon = null;
+      row.maroowell_exists = null;
+    }
+  }
 
   const camp = clean(url.searchParams.get("camp"));
   const routeCode = code(url.searchParams.get("code"));
@@ -537,7 +558,7 @@ async function listRoutes(request, env, url) {
   if (routeCode) rows = rows.filter(r => code(r.route_code).startsWith(routeCode));
   if (q) rows = rows.filter(r => [r.camp,r.route_code,r.address,r.delivery_location_name,r.delivery_location_address,r.route_tip,r.tonest_memo]
     .map(v => clean(v).toLowerCase()).join(" ").includes(q));
-  return json(request, { rows, count: rows.length });
+  return json(request, { rows, count: rows.length, maroowellStatus });
 }
 
 async function createRoute(request, env) {
