@@ -4,11 +4,12 @@
   if (window.__TONEST_BOARD_MENU_INIT__) return;
   window.__TONEST_BOARD_MENU_INIT__ = true;
 
-  const BUILD = "20261007-realtime-v1";
+  const BUILD = "20261111-schedule-source-v1";
 
   const PAGES = [
     { key:"home", label:"Home", path:"/home", desc:"투네스트 운영 홈" },
     { key:"realtime", label:"실시간 현황", path:"/realtime", desc:"전체 캠프 실시간 배송 · 반품 · 프백 현황" },
+    { key:"schedule", label:"스케줄", path:"/tonest_schedule", desc:"마닷 기반 근무표 · 엑셀 생성 · META 업로드" },
     { key:"info", label:"TO:NEST 정보", path:"/tonest_info", desc:"인사 · 운영 기본정보" },
     { key:"coupang_camp", label:"쿠팡 캠프 조회", path:"/coupang_camp", desc:"공용 캠프 · 본캠프 · 수신 SH · 채번 링크 관리" },
     { key:"route_info", label:"라우트 정보", path:"/route_info", desc:"TO:NEST 라우트 · 단가 · 서서브 정보 · 지도 연결 관리" },

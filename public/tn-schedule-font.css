@@ -1,0 +1,40 @@
+/* Maroowell global typography - ChatGPT-like crisp UI baseline */
+:root{
+  --mw-global-font:"Malgun Gothic","Apple SD Gothic Neo","Noto Sans KR",system-ui,sans-serif;
+  --font:var(--mw-global-font) !important;
+  --mw-font:var(--mw-global-font) !important;
+  --font-mw:var(--mw-global-font) !important;
+}
+
+html,
+body{
+  font-family:var(--mw-global-font) !important;
+  font-weight:500;
+  color:#0f172a;
+  text-rendering:auto !important;
+  -webkit-font-smoothing:auto !important;
+  -moz-osx-font-smoothing:auto !important;
+  font-synthesis:none !important;
+  text-shadow:none !important;
+  -webkit-text-stroke:0 !important;
+}
+
+body,
+button,input,select,textarea,table,th,td,
+div,span,p,a,label,small,b,strong,h1,h2,h3,h4,h5,h6{
+  font-family:var(--mw-global-font) !important;
+  text-rendering:auto !important;
+  -webkit-font-smoothing:auto !important;
+  -moz-osx-font-smoothing:auto !important;
+  font-synthesis:none !important;
+  text-shadow:none !important;
+  -webkit-text-stroke:0 !important;
+}
+
+button,input,select,textarea{
+  font-weight:500;
+}
+
+::placeholder{
+  font-family:var(--mw-global-font) !important;
+}

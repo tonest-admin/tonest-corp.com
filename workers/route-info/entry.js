@@ -1,3 +1,5 @@
+import scheduleWorker from "../schedule-api/worker.js";
+
 /**
  * TO:NEST route-info Worker v4 - unified PK
  *
@@ -636,6 +638,10 @@ export default {
     try {
       const url = new URL(request.url);
       const path = url.pathname.replace(/\/+$/, "") || "/";
+      if(path === "/schedule-api" || path.startsWith("/schedule-api/")) {
+        url.pathname=path.slice("/schedule-api".length)||"/";
+        return await scheduleWorker.fetch(new Request(url.toString(),request),env);
+      }
 
       if (request.method === "OPTIONS") {
         if (!isAllowedOrigin(request)) return new Response(null, { status: 403 });
