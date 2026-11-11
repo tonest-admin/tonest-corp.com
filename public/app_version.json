@@ -1,4 +1,4 @@
-{
+﻿{
   "versionCode": 4,
   "versionName": "1.0.3",
   "updatedAt": "2026-11-11",
@@ -7,9 +7,9 @@
   "sha256": "ed39909ac8c2bde4b466cf3d5db7002af6f706bd9f801d3fb721c2aad8ef1cf4",
   "downloadUrl": "/downloads/Tonest-1.0.3-test.apk",
   "changes": [
-    "로그인 화면의 여백·테두리·타이포그래피 정리",
-    "아이디 저장·비밀번호 저장 옵션 동시 지원",
-    "회원가입 버튼 제거",
-    "투네스트 공식 로고와 앱 아이콘 적용"
+    "\ub85c\uadf8\uc778 \ud654\uba74\uc758 \uc5ec\ubc31\u00b7\ud14c\ub450\ub9ac\u00b7\ud0c0\uc774\ud3ec\uadf8\ub798\ud53c \uc815\ub9ac",
+    "\uc544\uc774\ub514 \uc800\uc7a5\u00b7\ube44\ubc00\ubc88\ud638 \uc800\uc7a5 \uc635\uc158 \ub3d9\uc2dc \uc9c0\uc6d0",
+    "\ud68c\uc6d0\uac00\uc785 \ubc84\ud2bc \uc81c\uac70",
+    "\ud22c\ub124\uc2a4\ud2b8 \uacf5\uc2dd \ub85c\uace0\uc640 \uc571 \uc544\uc774\ucf58 \uc801\uc6a9"
   ]
 }
