@@ -10,7 +10,7 @@
     "boot"
   ],
   "worker_functions_total": 79,
-  "worker_functions_same_after_branding": 69,
+  "worker_functions_same_after_branding": 68,
   "worker_adapted_functions": [
     "corsHeaders",
     "getAccess",
@@ -21,7 +21,8 @@
     "selectRoutes",
     "selectDrivers",
     "selectInfoAccounts",
-    "buildNativeMetaXlsx"
+    "buildNativeMetaXlsx",
+    "prepareNativeMetaTransfer"
   ],
   "front_unchanged_functions": {
     "clean": "e1c4db1dd7269ae5a31ceb9174a731991f0570f0efe0283c369e48203f7320f2",
@@ -276,7 +277,6 @@
     "nativeMetaAccountParts": "d606f347a63b6092729ce6ed03bbf5da587dda14d98c56d933971b0e51c214f9",
     "nativeMetaAccountIndex": "88cc80ce235635c6c0c15395caa040e59c23119f1b50a8882fcfaa9417d1c48f",
     "nativeMetaScheduleRows": "f141580a92d4cac274bf99ea3b990073d7a312529e0c29b3c671c1e5772e8e4a",
-    "prepareNativeMetaTransfer": "181e6709c6a9b52e637dd196b7a92922dbecd225e203a968da42dbcd0c7300f0",
     "nativeMetaXml": "7a38b8a53ac194ff791abfc74822af52ee9296f8ae758e2af6c3cc24b854c838",
     "nativeMetaZip": "92460ae8129d79d6b80bdce2eb0385eb08716b492cf84d2fa6c1a3a8cf710880"
   }

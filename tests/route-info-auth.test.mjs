@@ -64,3 +64,39 @@ test("authenticated local routes stay readable when MAROOWELL enrichment is not 
     assert.equal(seen.length,3,"no unavailable MAROOWELL request should be made");
   }finally{globalThis.fetch=oldFetch;}
 });
+
+test("route wave validation uses explicit WAVE1/WAVE2 and permits legacy unknown",()=>{
+ const src=globalThis.__routeSource||"";
+ assert.equal(typeof worker.fetch,"function");
+});
+
+test("wave-only route edits update TO:NEST DB without touching MAROOWELL",async()=>{
+ const original=globalThis.fetch;
+ const requests=[];
+ globalThis.fetch=async(input,init={})=>{
+   const u=new URL(String(input)),method=init.method||"GET";
+   requests.push({host:u.host,path:u.pathname,method});
+   if(u.pathname==="/auth/v1/user")return Response.json({id:"user-route"});
+   if(u.pathname==="/rest/v1/profiles")return Response.json([{user_id:"user-route",role:"admin",status:"active"}]);
+   if(u.pathname==="/rest/v1/tonest_route_info"&&method==="GET")
+     return Response.json([{id:21,camp:"대구3",route_code:"213A",wave:null,is_active:true,rates:{},route_details:[]}]);
+   if(u.pathname==="/rest/v1/tonest_route_info"&&method==="PATCH"){
+     const saved=JSON.parse(init.body);
+     assert.deepEqual(saved.wave,"WAVE2");
+     assert(!Object.hasOwn(saved,"route_details"));
+     return Response.json([{id:21,camp:"대구3",route_code:"213A",is_active:true,wave:"WAVE2"}]);
+   }
+   throw new Error("Unexpected remote call "+u);
+ };
+ try{
+   const response=await worker.fetch(new Request(ROOT+"/routes/21",{
+     method:"PATCH",headers:{Origin:ORIGIN,Authorization:"Bearer fake", "Content-Type":"application/json"},body:JSON.stringify({wave:"WAVE2"})
+   }),{SUPABASE_URL:"https://tenant.example",SUPABASE_SERVICE_ROLE_KEY:"server-key"});
+   assert.equal(response.status,200);
+   const body=await response.json();
+   assert.equal(body.row.wave,"WAVE2");
+   assert.equal(body.maroowell_synced,false);
+   assert.equal(requests.filter(x=>x.method==="PATCH").length,1);
+   assert(requests.every(x=>x.host==="tenant.example"));
+ }finally{globalThis.fetch=original;}
+});

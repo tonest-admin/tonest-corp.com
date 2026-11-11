@@ -189,10 +189,18 @@ function defaultRates(input = null) {
   }
   return out;
 }
+function normalizedRouteWave(value) {
+  const v=clean(value).toUpperCase();
+  if(v==="WAVE1"||v==="야간")return "WAVE1";
+  if(v==="WAVE2"||v==="주간")return "WAVE2";
+  if(v===""||v==="미지정")return null;
+  throw httpError(400,"라우트 근무구분은 주간, 야간 또는 미지정이어야 합니다.");
+}
 function localPayload(body, current = null) {
   return {
     camp: hasOwn(body, "camp") ? clean(body.camp) : clean(current?.camp),
     route_code: hasOwn(body, "route_code") ? code(body.route_code) : code(current?.route_code),
+    wave: hasOwn(body,"wave") ? normalizedRouteWave(body.wave) : normalizedRouteWave(current?.wave),
     contract_date: hasOwn(body, "contract_date") ? (clean(body.contract_date) || null) : (current?.contract_date ?? null),
     address: hasOwn(body, "address") ? (clean(body.address) || null) : (current?.address ?? null),
     delivery_location_name: hasOwn(body, "delivery_location_name") ? (clean(body.delivery_location_name) || null) : (current?.delivery_location_name ?? null),
@@ -291,7 +299,7 @@ async function mwEnsureRoute(env, record) {
     full_code: record.route_code,
     delivery_location_name: record.delivery_location_name || null,
     delivery_location_address: record.delivery_location_address || null,
-    vendor_business_number_1w: vendor.business_number,
+    [record.wave === "WAVE2" ? "vendor_business_number_2w" : "vendor_business_number_1w"]: vendor.business_number,
     is_active: true
   };
   if (route?.id != null) {
@@ -329,7 +337,7 @@ async function mwMasterUpdate(env, id, record) {
   await mwFetch(env, `/rest/v1/${MW_ROUTE_TABLE}?id=eq.${id}`, {
     method: "PATCH",
     headers: { Prefer: "return=minimal" },
-    body: JSON.stringify({ vendor_business_number_1w: vendor.business_number, is_active: true })
+    body: JSON.stringify({ [record.wave === "WAVE2" ? "vendor_business_number_2w" : "vendor_business_number_1w"]: vendor.business_number, is_active: true })
   });
 }
 
@@ -356,7 +364,7 @@ async function mwUpsertBaseAndRates(env, id, record) {
   const payload = {
     camp: record.camp,
     route: record.route_code,
-    wave: "야간",
+    wave: record.wave === "WAVE2" ? "주간" : "야간",
     contract_date: record.contract_date || null,
     address: record.address || null,
     "25y_orgin_price": r25.origin_price,
@@ -505,6 +513,7 @@ async function mwReadBusinessInfo(env, id) {
     route_tip: base?.route_tip ?? null,
     route_details: Array.isArray(detailsRaw) ? detailsRaw : [],
     is_active: route.is_active !== false,
+    wave: base?.wave === "주간" ? "WAVE2" : "WAVE1",
     has_polygon: route.polygon_wgs84 != null,
     night_vendor_name: await mwVendorNameByBusinessNumber(env, route.vendor_business_number_1w)
   };
@@ -588,10 +597,15 @@ async function updateRoute(request, env, id) {
   const record = localPayload(body, current);
   if (!record.camp || !record.route_code) throw httpError(400, "캠프와 라우트는 필수입니다.");
 
-  await pushAllToMaroowell(env, id, record, true);
-  const saved = await patchLocal(env, id, record);
-  const mw = await mwRouteById(env, id);
-  return json(request, { row: { ...(saved || {}), has_polygon: Boolean(mw?.polygon_wgs84), maroowell_exists: Boolean(mw) }, maroowell_synced: true });
+  // Changing TO:NEST's schedule classification alone must not replay all
+  // MAROOWELL rates, route details and night-vendor metadata.
+  const waveOnlyChange=hasOwn(body,"wave")&&Object.keys(body||{}).every(key=>key==="wave");
+  if(!waveOnlyChange)await pushAllToMaroowell(env,id,record,true);
+  const saved = await patchLocal(env, id, waveOnlyChange?{wave:record.wave}:record);
+  // A wave-only edit is local scheduling metadata; it must work without
+  // MAROOWELL credentials or writes, and preserve other route fields.
+  const mw = waveOnlyChange ? null : await mwRouteById(env, id);
+  return json(request, { row: { ...(saved || {}), has_polygon: waveOnlyChange ? null : Boolean(mw?.polygon_wgs84), maroowell_exists: waveOnlyChange ? null : Boolean(mw) }, maroowell_synced: !waveOnlyChange });
 }
 
 async function softDeleteRoute(request, env, id) {
@@ -629,6 +643,7 @@ async function fromMap(request, env) {
   }
 
   const baseRecord = localPayload(mwInfo, existing);
+  if(!existing&&!baseRecord.wave)baseRecord.wave="WAVE1";
   const saved = existing ? await patchLocal(env, id, baseRecord) : await insertLocal(env, id, baseRecord);
   return json(request, { ok: true, created: !existing, row: { ...(saved || {}), has_polygon: mwInfo.has_polygon, maroowell_exists: true } });
 }

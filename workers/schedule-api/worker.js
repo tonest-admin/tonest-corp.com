@@ -67,7 +67,7 @@ export default {
         const weekEnd = addDays(weekStart, 6);
 
         const [routes, schedules, drivers, updateStatus] = await Promise.all([
-          selectRoutes(env, camp),
+          selectRoutes(env, camp, wave),
           selectSchedules(env, {
             camp,
             wave,
@@ -1425,12 +1425,14 @@ async function getMetaWorkflowStatus(env, workflowId) {
   };
 }
 
-async function selectRoutes(env, camp) {
+async function selectRoutes(env, camp, wave) {
   const records=await supabaseSelect(env,TABLE_ROUTE_INFO,{
-    select:"id,camp,route_code,route_tip,route_details,is_active",
+    select:"id,camp,route_code,wave,route_tip,route_details,is_active",
     camp:`eq.${camp}`,limit:"10000"
   });
-  return adaptTenantRoutes(records);
+  // NULL denotes a legacy unassigned route, visible under both shifts until
+  // the operator explicitly classifies it in Route Information.
+  return adaptTenantRoutes(records.filter(row=>!row.wave||row.wave===wave));
 }
 
 async function selectSchedules(env, { camp, wave, weekStart, weekEnd }) {
@@ -1757,7 +1759,7 @@ async function prepareNativeMetaTransfer(env,{camp,wave,date}){
   const metaDate=wave==="WAVE1"?addDays(date,1):date;
   const [schedules,routes,accounts,current]=await Promise.all([
     selectSchedules(env,{camp,wave,weekStart:date,weekEnd:date}),
-    selectRoutes(env,camp),
+    selectRoutes(env,camp,wave),
     selectInfoAccounts(env),
     getMetaCurrentSchedule(env,{camp,wave,date:metaDate})
   ]);
@@ -1889,17 +1891,23 @@ async function tenantScheduleConfig(env) {
   // Only the route-information catalogue determines which camps appear in
   // the schedule selector. Contractor/driver rows must not create camps.
   const routes=await supabaseSelect(env,TABLE_ROUTE_INFO,{
-    select:"camp,is_active",limit:"10000"
+    select:"camp,wave,is_active",limit:"10000"
   });
-  const campNames=[...new Set(routes
-    .filter(row=>row.is_active!==false)
-    .map(row=>clean(row.camp))
-    .filter(Boolean)
-  )].sort((a,b)=>a.localeCompare(b,"ko",{numeric:true}));
+  const camps=new Map();
+  for(const row of routes){
+    if(row.is_active===false)continue;
+    const camp=clean(row.camp);
+    if(!camp)continue;
+    if(!camps.has(camp))camps.set(camp,new Set());
+    const waves=camps.get(camp);
+    if(row.wave==="WAVE1"||row.wave==="WAVE2")waves.add(row.wave);
+    else{waves.add("WAVE1");waves.add("WAVE2");}
+  }
   return {
     vendor_name:"주식회사 투네스트",
     business_number:"1658803281",
-    camps:campNames.map(camp=>({camp,waves:["WAVE2","WAVE1"]})),
+    camps:[...camps].map(([camp,waves])=>({camp,waves:["WAVE2","WAVE1"].filter(w=>waves.has(w))}))
+      .sort((a,b)=>a.camp.localeCompare(b.camp,"ko",{numeric:true})),
     source_commit:"5d127cf124f0149113380393c74b1328c0065d29"
   };
 }

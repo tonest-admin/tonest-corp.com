@@ -182,3 +182,27 @@ test('empty route information yields an empty camp list without driver fallback'
  assert.deepEqual(data.camps,[]);
  assert(!calls.some(x=>x.url.pathname==='/rest/v1/tonest_info'));
 },{routes:[]}));
+
+test('schedule selects only requested shift plus legacy unassigned routes',async()=>scenario(async()=>{
+ const night=await scheduleWorker.fetch(request('/schedule/week?camp='+encodeURIComponent('대구3')+'&wave=WAVE1&week_start=2026-11-08'),env);
+ assert.equal(night.status,200);assert.deepEqual((await night.json()).routes.map(x=>x.route_label),['213A','213C']);
+ const day=await scheduleWorker.fetch(request('/schedule/week?camp='+encodeURIComponent('대구3')+'&wave=WAVE2&week_start=2026-11-08'),env);
+ assert.equal(day.status,200);assert.deepEqual((await day.json()).routes.map(x=>x.route_label),['213B','213C']);
+ const config=await scheduleWorker.fetch(request('/config'),env);
+ assert.deepEqual((await config.json()).camps,[{camp:'대구3',waves:['WAVE2','WAVE1']}]);
+},{routes:[
+ {id:21,camp:'대구3',route_code:'213A',wave:'WAVE1',is_active:true},
+ {id:22,camp:'대구3',route_code:'213B',wave:'WAVE2',is_active:true},
+ {id:23,camp:'대구3',route_code:'213C',wave:null,is_active:true}
+]}));
+test('route information UI includes wave dropdown and keeps wave-only PATCH',()=>{
+ const front=fs.readFileSync(path.join(root,'public/route_info'),'utf8');
+ assert(front.includes('editable(row,"wave","wave")'));
+ assert(front.includes('미지정'));
+ assert(front.includes('WAVE1'));
+ assert(front.includes('WAVE2'));
+ assert(front.includes('const patch=waveOnly?{wave:body.wave}:body'));
+ for(const match of front.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)){
+  if(match[1].trim())new vm.Script(match[1]);
+ }
+});
