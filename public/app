@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0d9f99">
+<meta name="robots" content="noindex,nofollow">
+<title>TO:NEST | Android 앱 다운로드</title>
+<link rel="icon" href="/favicon.ico" type="image/x-icon">
+<style>
+:root{--teal:#12a8a2;--deep:#087d78;--ink:#193538;--sub:#63787a;--stroke:#dbe9e6;--card:#fff;--bg:#f4fbf9;--font:"Pretendard Variable",Pretendard,"Noto Sans KR",system-ui,-apple-system,"Segoe UI",sans-serif}
+*{box-sizing:border-box}html{background:#f5fbfa}body{margin:0;color:var(--ink);font-family:var(--font);font-size:14px;-webkit-font-smoothing:antialiased;background:radial-gradient(ellipse at 6% 0%,#dff8f2 0,transparent 36%),radial-gradient(ellipse at 100% 70%,#e5f7f6 0,transparent 38%),linear-gradient(180deg,#f9fdfc,#eff8f5);min-height:100svh}
+a{color:inherit}.container{width:min(100% - 32px,480px);margin:0 auto;padding:38px 0 42px}
+header{display:flex;align-items:center;gap:15px;padding:7px 4px 24px}.mark{height:56px;width:56px;object-fit:contain;filter:drop-shadow(0 3px 7px #159b9b23)}.eyebrow{font-weight:750;letter-spacing:.14em;font-size:11px;color:var(--deep)}h1{font-size:25px;letter-spacing:-.05em;margin:3px 0 0;line-height:1.28}
+.hero{background:#fff;border:1px solid var(--stroke);border-radius:27px;padding:28px 24px 24px;box-shadow:0 16px 38px #174c4510}.hero-icon{width:78px;height:78px;border-radius:23px;background:linear-gradient(155deg,#e0f7f3,#fcfffe);display:grid;place-items:center;border:1px solid #def0ec}.hero-icon img{width:49px;height:49px;object-fit:contain}.hero h2{font-size:24px;margin:18px 0 6px;letter-spacing:-.045em}.hero p{margin:0;font-size:13px;line-height:1.65;color:var(--sub)}.info{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:22px}.datum{background:#f5faf9;border:1px solid #e7f0ee;border-radius:14px;padding:12px}.datum small{font-size:11px;color:var(--sub)}.datum strong{display:block;margin-top:5px;font-size:16px;font-weight:760}.download{display:flex;justify-content:center;align-items:center;gap:9px;background:linear-gradient(110deg,#1bb9b1,#109c96);color:white;text-decoration:none;border-radius:16px;height:55px;margin-top:19px;font-size:16px;font-weight:770;box-shadow:0 9px 22px #0f9f9933}.download:hover{filter:brightness(1.04)}.download:active{transform:translateY(1px)}.download[aria-disabled="true"]{pointer-events:none;background:#b3c9c7;box-shadow:none}.download svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}.filename{margin-top:11px;color:var(--sub);font-size:11px;text-align:center;overflow-wrap:anywhere}.verified{display:flex;align-items:center;gap:8px;margin-top:13px;font-size:12px;color:#18796c}.verified span{background:#e5f8f1;border-radius:50%;width:20px;height:20px;display:grid;place-items:center}
+.section{margin-top:16px;background:#fff;border-radius:22px;border:1px solid var(--stroke);padding:22px 20px}.section h3{margin:0 0 17px;font-size:16px;letter-spacing:-.02em}.steps{list-style:none;padding:0;margin:0;display:grid;gap:16px}.steps li{display:flex;gap:12px;align-items:flex-start}.num{width:27px;height:27px;border-radius:9px;background:#e5f7f3;color:#0b8e85;display:grid;place-items:center;font-size:12px;font-weight:800;flex:0 0 auto}.steps b{display:block;font-size:13px}.steps p{margin:4px 0 0;font-size:12px;color:var(--sub);line-height:1.55}.changes{padding-left:18px;margin:0;line-height:1.85;font-size:12px;color:#4c6565}.note{margin:14px 2px 0;font-size:11px;line-height:1.65;color:#718685;text-align:center}footer{padding:25px 0 0;text-align:center;font-size:10px;color:#8a9e9d;letter-spacing:.09em}
+@media(max-width:420px){.container{padding-top:22px}.hero{padding:24px 19px 21px}.hero h2{font-size:22px}.section{padding:20px 17px}h1{font-size:23px}}
+</style>
+</head>
+<body>
+<div class="container">
+<header><img class="mark" src="/favicon.ico" alt="투네스트 로고"><div><div class="eyebrow">TO:NEST OPERATIONS</div><h1>투네스트 앱 다운로드</h1></div></header>
+<main>
+<section class="hero">
+<div class="hero-icon"><img src="/favicon.ico" alt=""></div>
+<h2>Android 테스트 앱</h2>
+<p>투네스트 운영을 모바일에서도 편리하게.<br>최신 테스트 버전을 다운로드하고 설치하세요.</p>
+<div class="info"><div class="datum"><small>현재 버전</small><strong id="version">확인 중</strong></div><div class="datum"><small>업데이트 날짜</small><strong id="date">확인 중</strong></div></div>
+<a id="download" class="download" href="#" aria-disabled="true">
+<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 17v4h16v-4"/></svg>
+<span id="downloadText">다운로드 준비 중…</span></a>
+<div class="filename" id="filename">APK 파일 정보를 불러오는 중입니다.</div>
+<div class="verified"><span>✓</span> 기존 테스트 앱을 삭제하지 않고 업데이트할 수 있습니다.</div>
+</section>
+<section class="section"><h3>설치 방법</h3><ol class="steps">
+<li><span class="num">1</span><div><b>갤럭시에서 이 페이지 접속</b><p>Chrome 또는 삼성 인터넷에서 tonest-corp.com/app에 접속해 주세요.</p></div></li>
+<li><span class="num">2</span><div><b>APK 다운로드</b><p>위 다운로드 버튼을 누르면 투네스트 설치 파일을 받을 수 있습니다.</p></div></li>
+<li><span class="num">3</span><div><b>앱 설치 또는 업데이트</b><p>다운로드한 APK를 열어 설치해 주세요. 최초 설치 시 브라우저의 '알 수 없는 앱 설치 허용'이 필요할 수 있습니다.</p></div></li>
+</ol></section>
+<section class="section"><h3>이번 업데이트</h3><ul class="changes" id="changes"><li>최신 변경사항을 확인 중입니다.</li></ul></section>
+<p class="note">내부 테스트용 앱입니다. Android 기기에서만 설치할 수 있습니다.<br>앱 데이터 보호를 위해 기존 테스트 앱을 삭제하지 마세요.</p>
+</main><footer>TO:NEST · THE POWER TO ATTRACT PEOPLE</footer>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+const safe=value=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+(async()=>{
+try{
+const response=await fetch('/app_version.json?ts='+Date.now(),{cache:'no-store'});
+if(!response.ok)throw new Error('버전 정보 응답 '+response.status);
+const data=await response.json();
+if(!/^\/downloads\/[A-Za-z0-9._-]+\.apk$/.test(String(data.downloadUrl||'')))throw new Error('다운로드 주소 오류');
+$('version').textContent='v'+data.versionName;
+$('date').textContent=data.updatedAt||'-';
+$('filename').textContent=data.fileName+' · 약 '+(Number(data.fileSizeBytes||0)/1048576).toFixed(1)+' MB';
+$('changes').innerHTML=(data.changes||[]).map(x=>'<li>'+safe(x)+'</li>').join('');
+$('download').href=data.downloadUrl;
+$('download').setAttribute('download',data.fileName);
+$('download').setAttribute('aria-disabled','false');
+$('downloadText').textContent='최신 APK 다운로드';
+}catch(error){$('downloadText').textContent='다운로드 준비 중';$('filename').textContent='파일 확인 실패: '+error.message}
+})();
+</script>
+</body></html>

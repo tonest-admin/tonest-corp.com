@@ -1,0 +1,15 @@
+{
+  "versionCode": 4,
+  "versionName": "1.0.3",
+  "updatedAt": "2026-11-11",
+  "fileName": "Tonest-1.0.3-test.apk",
+  "fileSizeBytes": 8322605,
+  "sha256": "ed39909ac8c2bde4b466cf3d5db7002af6f706bd9f801d3fb721c2aad8ef1cf4",
+  "downloadUrl": "/downloads/Tonest-1.0.3-test.apk",
+  "changes": [
+    "로그인 화면의 여백·테두리·타이포그래피 정리",
+    "아이디 저장·비밀번호 저장 옵션 동시 지원",
+    "회원가입 버튼 제거",
+    "투네스트 공식 로고와 앱 아이콘 적용"
+  ]
+}
