@@ -155,3 +155,30 @@ test('upstream failure returns JSON+CORS rather than unhandled exception',async(
  const r=await scheduleWorker.fetch(request('/schedule/meta/current?camp='+encodeURIComponent('대구3')+'&wave=WAVE2&date=2026-11-11'),env);
  assert.equal(r.status,503);assert.equal(r.headers.get('Access-Control-Allow-Origin'),origin);assert.equal((await r.json()).error,'meta_request_failed');
 },{upstreamFailure:true}));
+
+test('camp options come exclusively from active route information, not driver info',async()=>scenario(async(calls)=>{
+ const response=await scheduleWorker.fetch(request('/config'),env);
+ assert.equal(response.status,200);
+ const data=await response.json();
+ assert.deepEqual(data.camps.map(x=>x.camp),['광주','군포1','대구3']);
+ assert.deepEqual(data.camps.find(x=>x.camp==='대구3').waves,['WAVE2','WAVE1']);
+ assert(!data.camps.some(x=>x.camp==='인천9'));
+ assert(!calls.some(x=>x.url.pathname==='/rest/v1/tonest_info'),
+   '/config must not query driver information');
+ assert(calls.some(x=>x.url.pathname==='/rest/v1/tonest_route_info'),
+   '/config must read the route information table');
+}, {routes:[
+ {id:1,camp:'대구3',route_code:'213A',is_active:true},
+ {id:2,camp:'군포1',route_code:'503C',is_active:true},
+ {id:3,camp:'대구3',route_code:'213B',is_active:true},
+ {id:4,camp:'인천9',route_code:'908A',is_active:false},
+ {id:5,camp:'광주',route_code:'111A',is_active:true}
+]}));
+
+test('empty route information yields an empty camp list without driver fallback',async()=>scenario(async(calls)=>{
+ const response=await scheduleWorker.fetch(request('/config'),env);
+ assert.equal(response.status,200);
+ const data=await response.json();
+ assert.deepEqual(data.camps,[]);
+ assert(!calls.some(x=>x.url.pathname==='/rest/v1/tonest_info'));
+},{routes:[]}));

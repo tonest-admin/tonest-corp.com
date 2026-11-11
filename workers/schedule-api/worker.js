@@ -1886,26 +1886,22 @@ function adaptTenantRoutes(records) {
   return out;
 }
 async function tenantScheduleConfig(env) {
-  const [drivers,routes]=await Promise.all([
-    supabaseSelect(env,TABLE_INFO,{select:"camp_code,wave,is_resigned",limit:"10000"}),
-    supabaseSelect(env,TABLE_ROUTE_INFO,{select:"camp,is_active",limit:"10000"})
-  ]);
-  const camps=new Map();
-  const add=(camp,wave)=>{
-    camp=clean(camp);if(!camp||!/\d$/.test(camp))return;
-    if(!camps.has(camp))camps.set(camp,new Set());
-    if(wave)camps.get(camp).add(wave);
+  // Only the route-information catalogue determines which camps appear in
+  // the schedule selector. Contractor/driver rows must not create camps.
+  const routes=await supabaseSelect(env,TABLE_ROUTE_INFO,{
+    select:"camp,is_active",limit:"10000"
+  });
+  const campNames=[...new Set(routes
+    .filter(row=>row.is_active!==false)
+    .map(row=>clean(row.camp))
+    .filter(Boolean)
+  )].sort((a,b)=>a.localeCompare(b,"ko",{numeric:true}));
+  return {
+    vendor_name:"주식회사 투네스트",
+    business_number:"1658803281",
+    camps:campNames.map(camp=>({camp,waves:["WAVE2","WAVE1"]})),
+    source_commit:"5d127cf124f0149113380393c74b1328c0065d29"
   };
-  for(const d of drivers)if(d.is_resigned!==true){
-    const both=/주.?야|전체|ALL/i.test(clean(d.wave));
-    if(both){add(d.camp_code,"WAVE1");add(d.camp_code,"WAVE2");}
-    else add(d.camp_code,normalizeWave(d.wave));
-  }
-  for(const r of routes)if(r.is_active!==false)add(r.camp,null);
-  return {vendor_name:"주식회사 투네스트",business_number:"1658803281",
-    camps:[...camps].map(([camp,waves])=>({camp,waves:waves.size?[...waves]:["WAVE2","WAVE1"]}))
-      .sort((a,b)=>a.camp.localeCompare(b.camp,"ko",{numeric:true})),
-    source_commit:"5d127cf124f0149113380393c74b1328c0065d29"};
 }
 function rotateTenantCookieJar(stored,response) {
   let jar=stored.map(c=>({...c}));
