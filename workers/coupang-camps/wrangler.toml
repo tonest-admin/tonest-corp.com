@@ -7,3 +7,6 @@ preview_urls = false
 
 [observability]
 enabled = true
+
+[triggers]
+crons = ["0 * * * *"]

@@ -401,8 +401,122 @@ async function proxyJson(request, env, targetPath, options = {}) {
   });
 }
 
+
+async function sourceDirectory(env, path) {
+  const res = await maroFetch(env,path);
+  if(!res.ok) throw new Error("Marowell source API HTTP " + res.status);
+  const raw = await res.json();
+  const rows = Array.isArray(raw) ? raw : raw.rows || raw.data || raw.items;
+  if(!Array.isArray(rows) || rows.length === 0 || rows.length >= 1000)
+    throw new Error("Refusing partial/empty source snapshot " + path);
+  return rows;
+}
+async function mirrorFetch(env,table,options={}) {
+  const result = await supabaseFetch(env,"/rest/v1/"+table+(options.query||""),{
+    method:options.method||"GET",
+    headers:options.headers||{},
+    body:options.body
+  },true);
+  if(!result.ok) throw new Error("TO:NEST "+table+" HTTP "+result.status+" "+(await result.text()).slice(0,120));
+  if(options.method==="POST") return null;
+  return result.json();
+}
+async function fingerprint(value) {
+  const bytes = new TextEncoder().encode(JSON.stringify(value));
+  const hashed = await crypto.subtle.digest("SHA-256",bytes);
+  return Array.from(new Uint8Array(hashed)).map(b=>b.toString(16).padStart(2,"0")).join("");
+}
+async function syncMirrorTable(env,table,endpoint,makeRow) {
+  const source = await sourceDirectory(env,endpoint);
+  const existing = await mirrorFetch(env,table,{query:"?select=source_id,row_hash&limit=2000"});
+  const hashes = new Map(existing.map(r=>[Number(r.source_id),r.row_hash]));
+  const changed=[];
+  for(const row of source){
+    const id=Number(row.id);
+    if(!Number.isSafeInteger(id)||id<1) throw new Error("Invalid mirror row ID");
+    const hash=await fingerprint(row);
+    if(hashes.get(id)!==hash) changed.push(makeRow(row,hash));
+  }
+  for(let i=0;i<changed.length;i+=75)
+    await mirrorFetch(env,table,{
+      method:"POST",query:"?on_conflict=source_id",
+      headers:{"Content-Type":"application/json","Prefer":"resolution=merge-duplicates,return=minimal"},
+      body:JSON.stringify(changed.slice(i,i+75))
+    });
+  // Missing rows never trigger automatic deletion; source API has no cursor pagination.
+  return {total:source.length,changed:changed.length};
+}
+function asCampRow(r,h) {
+  const fields=["mb_camp","code","camp_type","address","region","area",
+  "latitude","longitude","parent_camp_id","receiving_sh_id","numbering_url","description"];
+  const row={source_id:Number(r.id),camp:String(r.camp||""),source_updated_at:r.updated_at||null,
+    source_payload:r,row_hash:h};
+  for(const field of fields) row[field]=r[field]??null;
+  return row;
+}
+function asRouteRow(r,h){
+  return {source_id:Number(r.id),camp:r.camp??null,code:String(r.code||""),
+    full_code:r.full_code??null,delivery_location_name:r.delivery_location_name??null,
+    delivery_location_address:r.delivery_location_address??null,
+    is_active:r.is_active!==false,source_updated_at:r.updated_at??null,row_hash:h};
+}
+async function syncTonestCamps(env){
+  const start=new Date().toISOString();
+  let camp=null, route=null, error="";
+  try{
+    camp=await syncMirrorTable(env,"camps_mirror","/api/v1/camps?limit=1000",asCampRow);
+    try{
+      route=await syncMirrorTable(env,"subsubroutes_mirror","/api/v1/subsubroutes?limit=1000",asRouteRow);
+    }catch(e){error="Subroutes mirror: "+String(e?.message||e);}
+  }catch(e){error="Camps mirror: "+String(e?.message||e);}
+  const status=error?"failed":"success";
+  try{
+    await mirrorFetch(env,"camps_sync_runs",{
+      method:"POST",headers:{"Content-Type":"application/json","Prefer":"return=minimal"},
+      body:JSON.stringify({started_at:start,finished_at:new Date().toISOString(),
+        status,total_rows:camp?.total||0,changed_rows:(camp?.changed||0)+(route?.changed||0),
+        deleted_rows:0,error_message:error||null})
+    });
+  }catch(e){console.error("camp sync audit failed",e);}
+  if(!camp) throw new Error(error);
+  return {status,camps:camp,subsubroutes:route,warning:error};
+}
+async function localCamps(request,env,url){
+  const records=await mirrorFetch(env,"camps_mirror",{
+    query:"?select=source_payload&order=source_updated_at.desc.nullslast,source_id.desc&limit=1000"
+  });
+  const q=text(url.searchParams.get("q")).toLowerCase();
+  const camp=text(url.searchParams.get("camp")).toLowerCase();
+  const mb=text(url.searchParams.get("mb_camp")||url.searchParams.get("ormb_camp")||url.searchParams.get("orbm_camp")).toLowerCase();
+  const limit=Math.max(1,Math.min(1000,Number(url.searchParams.get("limit"))||500));
+  const rows=records.map(r=>r.source_payload).filter(r=>{
+    const a=String(r.camp||"").trim().toLowerCase(),b=String(r.mb_camp||"").trim().toLowerCase();
+    return (!q||a.includes(q)||b.includes(q))&&(!camp||a===camp)&&(!mb||b===mb);
+  }).slice(0,limit);
+  return json(request,{rows,source:"tonest-mirror"});
+}
+async function reconcileAfterWrite(env,request,response){
+  if(!response.ok) return response;
+  const payload=await response.clone().json().catch(()=>({}));
+  const row=payload.row;
+  if(row?.id){
+    const updated=asCampRow(row,await fingerprint(row));
+    await mirrorFetch(env,"camps_mirror",{
+      method:"POST",query:"?on_conflict=source_id",
+      headers:{"Content-Type":"application/json","Prefer":"resolution=merge-duplicates,return=minimal"},
+      body:JSON.stringify([updated])
+    });
+  } else {
+    await syncTonestCamps(env);
+  }
+  return response;
+}
+
 export default {
-  async fetch(request, env) {
+  async scheduled(_event,env,ctx) {
+    ctx.waitUntil(syncTonestCamps(env));
+  },
+  async fetch(request, env,ctx) {
     try {
       const url = new URL(request.url);
       const path = url.pathname.replace(/\/+$/,"") || "/";
@@ -448,25 +562,21 @@ export default {
         );
       }
 
+      if (path === "/sync" && request.method === "POST") {
+        const access=await requireAccess(request,env,true);
+        if(access.profile.role!=="super_admin") throw httpError(403,"최고관리자만 수동 동기화할 수 있습니다.");
+        return json(request,await syncTonestCamps(env));
+      }
       if (path === "/camps" && request.method === "GET") {
-        await requireAccess(request, env, false);
-
-        const params = new URLSearchParams(url.searchParams);
-        if (!params.has("limit")) params.set("limit","1000");
-
-        return proxyJson(
-          request,
-          env,
-          "/api/v1/camps?" + params.toString(),
-          { method:"GET" }
-        );
+        await requireAccess(request,env,false);
+        return localCamps(request,env,url);
       }
 
       if (path === "/camps" && request.method === "POST") {
         await requireAccess(request, env, true);
         const body = await request.text();
 
-        return proxyJson(
+        const response=await proxyJson(
           request,
           env,
           "/api/v1/camps",
@@ -475,13 +585,15 @@ export default {
             body
           }
         );
+        if(response.ok) ctx.waitUntil(reconcileAfterWrite(env,request,response.clone()));
+        return response;
       }
 
       if (path === "/camps/batch" && request.method === "POST") {
         await requireAccess(request, env, true);
         const body = await request.text();
 
-        return proxyJson(
+        const response=await proxyJson(
           request,
           env,
           "/api/v1/camps/batch",
@@ -490,6 +602,8 @@ export default {
             body
           }
         );
+        if(response.ok) ctx.waitUntil(syncTonestCamps(env));
+        return response;
       }
 
       const match = path.match(/^\/camps\/(\d+)$/);
@@ -498,7 +612,7 @@ export default {
         await requireAccess(request, env, true);
         const body = await request.text();
 
-        return proxyJson(
+        const response=await proxyJson(
           request,
           env,
           "/api/v1/camps/" + match[1],
@@ -507,17 +621,21 @@ export default {
             body
           }
         );
+        if(response.ok) ctx.waitUntil(syncTonestCamps(env));
+        return response;
       }
 
       if (match && request.method === "DELETE") {
         await requireAccess(request, env, true);
 
-        return proxyJson(
+        const response=await proxyJson(
           request,
           env,
           "/api/v1/camps/" + match[1],
           { method:"DELETE" }
         );
+        if(response.ok) ctx.waitUntil(syncTonestCamps(env));
+        return response;
       }
 
       return json(request, {
@@ -545,9 +663,11 @@ export class RealtimeCampDirectory extends WorkerEntrypoint {
   async listCamps(camp = '') {
     const params = new URLSearchParams({limit:'1000'});
     if (camp) params.set('camp', String(camp).slice(0,120));
-    const response = await maroFetch(this.env, '/api/v1/camps?'+params);
-    if (!response.ok) throw new Error('Camp directory HTTP '+response.status);
-    const data = await response.json();
-    return Array.isArray(data) ? data : (data.rows || data.data || data.items || []);
+    const records=await mirrorFetch(this.env,"camps_mirror",{
+      query:"?select=source_payload&order=source_updated_at.desc.nullslast,source_id.desc&limit=1000"
+    });
+    const rows=records.map(item=>item.source_payload);
+    const filter=String(camp||"").trim().toLowerCase();
+    return filter?rows.filter(r=>String(r.camp||"").trim().toLowerCase()===filter):rows;
   }
 }
