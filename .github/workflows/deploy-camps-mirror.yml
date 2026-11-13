@@ -4,6 +4,7 @@ on:
     branches: [main]
     paths:
       - 'workers/coupang-camps/**'
+      - 'tests/camps-mirror-write.test.mjs'
       - '.github/workflows/deploy-camps-mirror.yml'
   workflow_dispatch:
 permissions:
@@ -17,6 +18,11 @@ jobs:
     timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify camp mirror changes and failure handling
+        run: node --test tests/camps-mirror-write.test.mjs
       - name: Deploy camps worker with hourly mirror cron
         uses: cloudflare/wrangler-action@v3
         with:

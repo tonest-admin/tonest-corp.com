@@ -644,6 +644,9 @@
     <button id="btnSaveAll" class="btn green" type="button" disabled>
       전체 저장
     </button>
+    <button id="btnMirrorSync" class="btn" type="button" disabled>
+      앱 DB 동기화 재시도
+    </button>
 
     <button id="btnCsv" class="btn" type="button">
       CSV 다운로드
@@ -864,6 +867,7 @@
     reload:$("#btnReload"),
     add:$("#btnAddRow"),
     save:$("#btnSaveAll"),
+    mirrorSync:$("#btnMirrorSync"),
     csv:$("#btnCsv"),
     logout:$("#btnLogout"),
     clear:$("#btnClearFilters"),
@@ -906,7 +910,8 @@
     session:null,
     sb:null,
     currentQr:null,
-    renderTimer:null
+    renderTimer:null,
+    busy:false
   };
 
   function setStatus(message, kind="") {
@@ -916,9 +921,11 @@
   }
 
   function setBusy(on) {
-    dom.reload.disabled = !!on;
-    dom.add.disabled = !!on || !state.canEdit;
-    dom.save.disabled = !!on || !state.canEdit;
+    state.busy=!!on;
+    dom.reload.disabled = state.busy;
+    dom.add.disabled = state.busy || !state.canEdit;
+    dom.save.disabled = state.busy || !state.canEdit;
+    dom.mirrorSync.disabled = state.busy || !state.canEdit;
   }
 
   function roleLabel(role) {
@@ -1755,8 +1762,10 @@
       !state.canEdit;
 
     dom.save.disabled =
-      !state.canEdit ||
+      state.busy || !state.canEdit ||
       dirtyCount() === 0;
+    dom.mirrorSync.disabled =
+      state.busy || !state.canEdit;
   }
 
   function scheduleRender() {
@@ -1953,6 +1962,8 @@
 
       error.status =
         response.status;
+      error.sourceSaved = payload?.sourceSaved === true;
+      error.mirrorSynced = payload?.mirrorSynced === true;
 
       throw error;
     }
@@ -2172,14 +2183,39 @@
           }
         );
 
+      if(result.mirrorSynced!==true){
+        throw new Error("앱용 캠프 복제 DB 동기화 결과를 확인하지 못했습니다.");
+      }
+      await loadRows();
       setStatus(
-        `저장 완료 · 추가 ${result.inserted || 0} · 수정 ${result.updated || 0} · 삭제 ${result.deleted || 0}`,
+        `원본·앱 DB 반영 확인 완료 · 추가 ${result.inserted || 0} · 수정 ${result.updated || 0} · 삭제 ${result.deleted || 0}`,
         "ok"
       );
-
-      await loadRows();
-
+    } catch(error) {
+      if(error?.sourceSaved){
+        // Do not repeat the source write: it may have already inserted/deleted rows.
+        setStatus(
+          "원본 저장 완료 / 앱 DB 동기화 미확인. '앱 DB 동기화 재시도'를 누르세요.",
+          "err"
+        );
+        return;
+      }
+      throw error;
     } finally {
+      setBusy(false);
+    }
+  }
+
+  async function retryMirrorSync(){
+    if(!state.canEdit || state.busy)return;
+    setBusy(true);
+    setStatus("앱용 캠프 DB 동기화 및 검증 중...","warn");
+    try{
+      const result=await apiFetch("/camps/reconcile",{method:"POST"});
+      if(result.mirrorSynced!==true)throw new Error("동기화 확인 실패");
+      await loadRows();
+      setStatus("원본과 앱용 캠프 DB 동기화 확인 완료","ok");
+    }finally{
       setBusy(false);
     }
   }
@@ -2597,6 +2633,12 @@
   dom.add.addEventListener(
     "click",
     addRow
+  );
+  dom.mirrorSync.addEventListener(
+    "click",
+    () => retryMirrorSync().catch(error=>setStatus(
+      error?.message||String(error),"err"
+    ))
   );
 
   dom.save.addEventListener(

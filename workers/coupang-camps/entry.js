@@ -507,7 +507,20 @@ async function syncMirrorTable(env,table,endpoint,makeRow) {
       if(!res.ok) throw new Error("Mirror prune failed HTTP "+res.status);
     }
   }
-  return {total:source.length,changed:changed.length,deleted:missing.length};
+  // POST/DELETE accepted by PostgREST is not sufficient: verify the app-facing
+  // mirror against the complete source snapshot before reporting success.
+  const confirmed=await mirrorFetch(env,table,{query:"?select=source_id,row_hash&limit=2000"});
+  const confirmedHashes=new Map(confirmed.map(r=>[Number(r.source_id),r.row_hash]));
+  if(confirmedHashes.size!==source.length) {
+    throw new Error("Mirror verification count mismatch for "+table);
+  }
+  for(const row of source) {
+    const id=Number(row.id);
+    if(confirmedHashes.get(id)!==await fingerprint(row)) {
+      throw new Error("Mirror verification hash mismatch for "+table+" ID "+id);
+    }
+  }
+  return {total:source.length,changed:changed.length,deleted:missing.length,verified:true};
 }
 function asCampRow(r,h) {
   const fields=["mb_camp","code","camp_type","address","region","area",
@@ -559,21 +572,32 @@ async function localCamps(request,env,url){
   }).slice(0,limit);
   return json(request,{rows,source:"tonest-mirror"});
 }
-async function reconcileAfterWrite(env,request,response){
-  if(!response.ok) return response;
-  const payload=await response.clone().json().catch(()=>({}));
-  const row=payload.row;
-  if(row?.id){
-    const updated=asCampRow(row,await fingerprint(row));
-    await mirrorFetch(env,"camps_mirror",{
-      method:"POST",query:"?on_conflict=source_id",
-      headers:{"Content-Type":"application/json","Prefer":"resolution=merge-duplicates,return=minimal"},
-      body:JSON.stringify([updated])
-    });
-  } else {
-    await syncTonestCamps(env);
+// Never acknowledge a web write until the app-facing mirror is verified.
+// Source writes cannot be rolled back here (the upstream batch is not atomic).
+// Report partial success explicitly so clients never replay inserts/deletes.
+async function finishCampWrite(request,env,response) {
+  if(!response.ok) {
+    // A failed upstream batch can still have partially committed writes.
+    // Reconcile those in the foreground as best effort, without hiding
+    // the original API failure or misreporting it as a clean success.
+    try { await syncTonestCamps(env); }
+    catch(e) { console.error("Camp mirror after upstream error",e); }
+    return response;
   }
-  return response;
+  const source=await response.clone().json().catch(()=>({}));
+  try {
+    const mirror=await syncTonestCamps(env);
+    if(mirror.status!=="success"||mirror.camps?.verified!==true)
+      throw new Error("Mirror verification incomplete");
+    return json(request,{...source,ok:true,mirrorSynced:true,mirror},response.status);
+  } catch(e) {
+    console.error("Camp source saved but mirror sync failed",e);
+    return json(request,{
+      ok:false,sourceSaved:true,mirrorSynced:false,
+      message:"원본 캠프 저장은 완료됐으나 앱용 복제 DB 반영 확인에 실패했습니다. 원본 저장을 다시 실행하지 말고 동기화 재시도를 사용하세요.",
+      syncError:String(e?.message||e)
+    },502);
+  }
 }
 
 export default {
@@ -635,6 +659,13 @@ export default {
         if(access.profile.role!=="super_admin") throw httpError(403,"최고관리자만 수동 동기화할 수 있습니다.");
         return json(request,await syncTonestCamps(env));
       }
+      if (path === "/camps/reconcile" && request.method === "POST") {
+        await requireAccess(request,env,true);
+        const mirror=await syncTonestCamps(env);
+        if(mirror.status!=="success"||mirror.camps?.verified!==true)
+          throw httpError(502,"Mirror verification incomplete");
+        return json(request,{ok:true,mirrorSynced:true,mirror});
+      }
       if (path === "/camps" && request.method === "GET") {
         await requireAccess(request,env,false);
         return localCamps(request,env,url);
@@ -653,8 +684,7 @@ export default {
             body
           }
         );
-        if(response.ok) ctx.waitUntil(reconcileAfterWrite(env,request,response.clone()));
-        return response;
+        return finishCampWrite(request,env,response);
       }
 
       if (path === "/camps/batch" && request.method === "POST") {
@@ -670,8 +700,7 @@ export default {
             body
           }
         );
-        if(response.ok) ctx.waitUntil(syncTonestCamps(env));
-        return response;
+        return finishCampWrite(request,env,response);
       }
 
       const match = path.match(/^\/camps\/(\d+)$/);
@@ -689,8 +718,7 @@ export default {
             body
           }
         );
-        if(response.ok) ctx.waitUntil(syncTonestCamps(env));
-        return response;
+        return finishCampWrite(request,env,response);
       }
 
       if (match && request.method === "DELETE") {
@@ -702,8 +730,7 @@ export default {
           "/api/v1/camps/" + match[1],
           { method:"DELETE" }
         );
-        if(response.ok) ctx.waitUntil(syncTonestCamps(env));
-        return response;
+        return finishCampWrite(request,env,response);
       }
 
       return json(request, {
