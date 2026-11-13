@@ -425,6 +425,7 @@ async function handleMirrorWebhook(request,env) {
   if(raw.length>35000) throw httpError(413,"Mirror event too large");
   const event=JSON.parse(raw);
   if(event?.event==="PING") return json(request,{ok:true,mirror:"connected"});
+  if(event?.event==="SYNC") return json(request,{ok:true,result:await syncTonestCamps(env)});
   const table=event?.table;
   if(!["camps","subsubroutes"].includes(table) ||
      !["INSERT","UPDATE","DELETE"].includes(event?.event)) throw httpError(400,"Invalid event");
@@ -489,8 +490,24 @@ async function syncMirrorTable(env,table,endpoint,makeRow) {
       headers:{"Content-Type":"application/json","Prefer":"resolution=merge-duplicates,return=minimal"},
       body:JSON.stringify(changed.slice(i,i+75))
     });
-  // Missing rows never trigger automatic deletion; source API has no cursor pagination.
-  return {total:source.length,changed:changed.length};
+  // The complete source list is bounded below 1,000. Reconcile deletions only
+  // when the change is small, otherwise protect against a truncated API response.
+  const sourceIds=new Set(source.map(x=>Number(x.id)));
+  const missing=[...hashes.keys()].filter(id=>!sourceIds.has(id));
+  if(missing.length>0) {
+    if(missing.length>Math.max(15,Math.ceil(hashes.size*0.10)) ||
+       source.length<Math.floor(hashes.size*0.90)) {
+      throw new Error("Refusing unexpectedly large mirror deletion: "+missing.length);
+    }
+    for(let i=0;i<missing.length;i+=60) {
+      const ids=missing.slice(i,i+60).join(",");
+      const res=await supabaseFetch(env,
+        "/rest/v1/"+table+"?source_id=in.("+ids+")",
+        {method:"DELETE"},true);
+      if(!res.ok) throw new Error("Mirror prune failed HTTP "+res.status);
+    }
+  }
+  return {total:source.length,changed:changed.length,deleted:missing.length};
 }
 function asCampRow(r,h) {
   const fields=["mb_camp","code","camp_type","address","region","area",
@@ -521,7 +538,7 @@ async function syncTonestCamps(env){
       method:"POST",headers:{"Content-Type":"application/json","Prefer":"return=minimal"},
       body:JSON.stringify({started_at:start,finished_at:new Date().toISOString(),
         status,total_rows:camp?.total||0,changed_rows:(camp?.changed||0)+(route?.changed||0),
-        deleted_rows:0,error_message:error||null})
+        deleted_rows:(camp?.deleted||0)+(route?.deleted||0),error_message:error||null})
     });
   }catch(e){console.error("camp sync audit failed",e);}
   if(!camp) throw new Error(error);
