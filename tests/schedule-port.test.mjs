@@ -15,6 +15,7 @@ const parity=JSON.parse(fs.readFileSync(path.join(root,'tests/fixtures/schedule-
 const origin='https://tonest-corp.com';
 const env={SUPABASE_URL:'https://tenant.example',SUPABASE_PUBLISHABLE_KEY:'mock-public',SUPABASE_SERVICE_ROLE:'mock-server',CAMP_DIRECTORY:{async listCamps(camp){return [{camp:camp||'대구3',code:'CL18',mb_camp:'본캠프',updated_at:'2026-11-01'}];}}};
 const sourceFunctions=(s,indent)=>{
+  s=s.replace(/\r\n?/g,'\n');
  const matches=[...s.matchAll(new RegExp('^'+indent+'(?:async )?function (\\w+)\\(','gm'))];
  return new Map(matches.map((m,i)=>[m[1],s.slice(m.index,matches[i+1]?.index??s.length).trim()]));
 };
