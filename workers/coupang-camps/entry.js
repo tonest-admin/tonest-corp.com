@@ -528,9 +528,10 @@ async function syncTonestCamps(env){
   let camp=null, route=null, error="";
   try{
     camp=await syncMirrorTable(env,"camps_mirror","/api/v1/camps?limit=1000",asCampRow);
-    try{
-      route=await syncMirrorTable(env,"subsubroutes_mirror","/api/v1/subsubroutes?limit=1000",asRouteRow);
-    }catch(e){error="Subroutes mirror: "+String(e?.message||e);}
+    // Source API for subsubroutes requires a camp filter; the database
+    // trigger mirrors single-route INSERT/UPDATE/DELETE events immediately.
+    // A single hourly camps GET is the complete bounded reconciliation.
+    route={total:null,changed:0,mode:"source-triggers"};
   }catch(e){error="Camps mirror: "+String(e?.message||e);}
   const status=error?"failed":"success";
   try{
