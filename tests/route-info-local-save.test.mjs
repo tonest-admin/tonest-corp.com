@@ -95,7 +95,7 @@ test("route information page does not discard unsaved rows on focus",()=>{
  for(const js of scripts)new vm.Script(js);
  assert.match(html,/if\(row\._new\)return true/);
  assert.match(html,/if\(dirtyCount\(\)\)/);
- assert.match(html,/if\(state\.session&&!state\.busy&&!dirtyCount\(\)\)/);
+ assert.doesNotMatch(html,/window\.addEventListener\("focus"/);
  assert.match(html,/await saveOne\(row\)/);
  assert.match(html,/마닷 동기화/);
  assert.match(html,/data-sync/);
