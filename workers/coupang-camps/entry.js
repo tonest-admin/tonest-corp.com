@@ -402,6 +402,52 @@ async function proxyJson(request, env, targetPath, options = {}) {
 }
 
 
+
+async function verifyMirrorWebhook(request,env) {
+  const raw=request.headers.get("X-Mirror-Token")||"";
+  if(!/^[0-9a-f]{64}$/.test(raw)) throw httpError(403,"Unauthorized mirror event");
+  const digest=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(raw));
+  const value=Array.from(new Uint8Array(digest)).map(x=>x.toString(16).padStart(2,"0")).join("");
+  const response=await supabaseFetch(env,
+    "/rest/v1/camps_mirror_webhook_auth?select=token_sha256&id=eq.1&limit=1",{},true);
+  if(!response.ok) throw new Error("mirror auth unavailable");
+  const rows=await response.json();
+  const known=rows?.[0]?.token_sha256||"";
+  if(known.length!==value.length) throw httpError(403,"Unauthorized mirror event");
+  // Bytewise comparison without short-circuit differences.
+  let mismatch=0;
+  for(let i=0;i<known.length;i++) mismatch |= known.charCodeAt(i)^value.charCodeAt(i);
+  if(mismatch!==0) throw httpError(403,"Unauthorized mirror event");
+}
+async function handleMirrorWebhook(request,env) {
+  await verifyMirrorWebhook(request,env);
+  const raw=await request.text();
+  if(raw.length>35000) throw httpError(413,"Mirror event too large");
+  const event=JSON.parse(raw);
+  if(event?.event==="PING") return json(request,{ok:true,mirror:"connected"});
+  const table=event?.table;
+  if(!["camps","subsubroutes"].includes(table) ||
+     !["INSERT","UPDATE","DELETE"].includes(event?.event)) throw httpError(400,"Invalid event");
+  const record=event.record;
+  if(!record||!Number.isSafeInteger(Number(record.id))||Number(record.id)<1)
+    throw httpError(400,"Invalid source row");
+  const target=table==="camps"?"camps_mirror":"subsubroutes_mirror";
+  const id=Number(record.id);
+  if(event.event==="DELETE") {
+    const response=await supabaseFetch(env,
+      "/rest/v1/"+target+"?source_id=eq."+id,{method:"DELETE"},true);
+    if(!response.ok) throw new Error("Mirror removal HTTP "+response.status);
+  }else{
+    const mapped=table==="camps"
+      ? asCampRow(record,await fingerprint(record))
+      : asRouteRow(record,await fingerprint(record));
+    await mirrorFetch(env,target,{method:"POST",query:"?on_conflict=source_id",
+      headers:{"Content-Type":"application/json","Prefer":"resolution=merge-duplicates,return=minimal"},
+      body:JSON.stringify([mapped])});
+  }
+  return json(request,{ok:true,table,event:event.event,id});
+}
+
 async function sourceDirectory(env, path) {
   const res = await maroFetch(env,path);
   if(!res.ok) throw new Error("Marowell source API HTTP " + res.status);
@@ -536,6 +582,10 @@ export default {
           kakaoDirectionsConfigured:!!kakaoRestKey(env),
           time:new Date().toISOString()
         });
+      }
+
+      if(path==="/mirror-webhook" && request.method==="POST") {
+        return handleMirrorWebhook(request,env);
       }
 
       if (path === "/me" && request.method === "GET") {
