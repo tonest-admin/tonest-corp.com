@@ -69,7 +69,7 @@ tbody td{padding:0;background:#fff;vertical-align:middle}tbody tr:nth-child(even
     <select id="polyFilter" class="filter"><option value="">폴리곤 전체</option><option value="yes">폴리곤 있음</option><option value="no">폴리곤 없음</option></select>
     <select id="activeFilter" class="filter"><option value="active">활성</option><option value="all">전체</option><option value="inactive">비활성</option></select>
     <button id="clearFilterBtn" class="btn" type="button">필터 초기화</button>
-    <span class="helper">TO:NEST 라우트 ID와 MAROOWELL subsubroutes ID를 동일하게 사용합니다. 저장 시 MAROOWELL도 자동 반영됩니다.</span>
+    <span class="helper">TO:NEST에 먼저 저장합니다. MAROOWELL 동기화는 각 행의 '동기화' 버튼으로 별도 진행합니다.</span>
   </section>
 
   <main class="sheetWrap"><div class="sheetInner"><table>
@@ -119,7 +119,7 @@ async function initAuth(){const cfgRes=await fetch(AUTH_BASE+"/auth-config",{cac
 function val(row,key){return row[key]??""}
 function mark(row,key,value){row[key]=value;row._dirty=true;renderPills()}
 function editable(row,key,type="text"){const disabled=!state.canEdit;if(type==="wave"){const value=text(val(row,key));return `<select class="cellSelect" data-k="${esc(row._key)}" data-f="wave" ${disabled?"disabled":""}><option value="" ${!value?"selected":""}>미지정</option><option value="WAVE2" ${value==="WAVE2"?"selected":""}>주간</option><option value="WAVE1" ${value==="WAVE1"?"selected":""}>야간</option></select>`;}if(type==="textarea")return `<textarea class="cellTextarea" data-k="${esc(row._key)}" data-f="${key}" ${disabled?"disabled":""}>${esc(val(row,key))}</textarea>`;if(type==="select")return `<select class="cellSelect" data-k="${esc(row._key)}" data-f="${key}" ${disabled?"disabled":""}><option value="" ${!text(val(row,key))?"selected":""}>-</option><option value="주/야" ${text(val(row,key))==="주/야"?"selected":""}>주/야</option><option value="주간" ${text(val(row,key))==="주간"?"selected":""}>주간</option><option value="야간" ${text(val(row,key))==="야간"?"selected":""}>야간</option><option value="심야" ${text(val(row,key))==="심야"?"selected":""}>심야</option></select>`;const inputType=type==="date"?"date":"text";const shown=["origin_price","fixed_price","backup_price"].includes(key)?money(val(row,key)):val(row,key);return `<input class="cellInput" type="${inputType}" data-k="${esc(row._key)}" data-f="${key}" value="${esc(shown)}" ${disabled?"disabled":""}>`}
-function mapUrl(row){const p=new URLSearchParams();if(text(row.camp))p.set("camp",text(row.camp));if(text(row.route_code)){p.set("code",text(row.route_code));p.set("mode","exact")}if(row.id)p.set("route_info_id",row.id);return "/coupang_route_map?"+p.toString()}
+function mapUrl(row){const p=new URLSearchParams();if(text(row.camp))p.set("camp",text(row.camp));if(text(row.route_code)){p.set("code",text(row.route_code));p.set("mode","exact")}const linked=Number(row.maroowell_subsubroute_id || (row.id>0?row.id:0));if(linked>0)p.set("route_info_id",linked);return "/coupang_route_map?"+p.toString()}
 function render(){dom.body.innerHTML="";if(!state.filtered.length){dom.body.innerHTML='<tr><td colspan="20"><div class="empty">등록된 라우트 정보가 없습니다. 상단 <b>행 추가</b>를 눌러 먼저 등록하세요.</div></td></tr>';renderPills();return}for(const row of state.filtered){ensureRates(row);const tr=document.createElement("tr");if(row._dirty)tr.classList.add("dirty");if(row._new)tr.classList.add("newRow");const details=Array.isArray(row.route_details)?row.route_details:[];const hasPoly=Boolean(row.has_polygon);tr.innerHTML=`
 <td><div class="roCell center">${row.id?`#${esc(row.id)}`:'신규'}</div></td>
 <td>${editable(row,"camp")}</td>
@@ -139,24 +139,78 @@ function render(){dom.body.innerHTML="";if(!state.filtered.length){dom.body.inne
 <td><div class="actionBox"><button class="smallBtn details" data-details="${esc(row._key)}">${details.length.toLocaleString()}개</button></div></td>
 <td><div class="actionBox"><button class="smallBtn map" type="button" data-map="${esc(row._key)}">${hasPoly?"지도 확인":"폴리곤 등록"}</button></div></td>
 <td>${editable(row,"tonest_memo","textarea")}</td>
-<td><div class="actionBox"><span class="statusBadge ${row.is_active!==false?"ok":"warn"}">${row.is_active!==false?"활성":"비활성"}</span></div></td>
-<td><div class="actionBox">${state.canEdit?`<button class="smallBtn danger" data-delete="${esc(row._key)}">비활성</button>`:""}</div></td>`;dom.body.appendChild(tr)}renderPills()}
+<td><div class="actionBox"><span class="statusBadge ${row.is_active!==false?"ok":"warn"}">${row.is_active!==false?"활성":"비활성"}</span><span class="statusBadge ${row.maroowell_sync_status==="synced"?"ok":"warn"}" title="${esc(row.maroowell_sync_error||"")}">${row._new?"미저장":row.maroowell_sync_status==="synced"?"마닷 연결":row.maroowell_sync_status==="error"?"연동 오류":"연동 대기"}</span></div></td>
+<td><div class="actionBox">${state.canEdit?`<button class="smallBtn" data-sync="${esc(row._key)}" ${row._new||row._dirty?"disabled":""}>마닷 동기화</button><button class="smallBtn danger" data-delete="${esc(row._key)}">비활성</button>`:""}</div></td>`;dom.body.appendChild(tr)}renderPills()}
 function renderPills(){dom.rowPill.textContent=state.filtered.length.toLocaleString()+"행";dom.dirtyPill.textContent="변경 "+dirtyCount().toLocaleString()}
-function applyFilters(){const q=text(dom.search.value).toLowerCase(),poly=text(dom.poly.value),active=text(dom.active.value);state.filtered=state.rows.filter(row=>{if(active==="active"&&row.is_active===false)return false;if(active==="inactive"&&row.is_active!==false)return false;if(poly==="yes"&&!row.has_polygon)return false;if(poly==="no"&&row.has_polygon)return false;if(q){const hay=[row.id,row.camp,row.route_code,row.address,row.delivery_location_name,row.delivery_location_address,row.route_tip,row.tonest_memo].map(x=>text(x).toLowerCase()).join(" ");if(!hay.includes(q))return false}return true});render()}
-async function load(){try{setBusy(true,"라우트 정보 불러오는 중...");const payload=await api("/routes?include_inactive=1");state.rows=(payload.rows||[]).map(normalize);applyFilters();if(payload.maroowellStatus&&payload.maroowellStatus!=="connected"){setStatus(`로드 완료: ${state.rows.length.toLocaleString()}개 · 마닷 연동 미설정/일시 오류(폴리곤 확인·저장 제한)`,"warn")}else{setStatus(`로드 완료: ${state.rows.length.toLocaleString()}개`,"ok")}}catch(e){console.error(e);setStatus(e.message||String(e),"err")}finally{setBusy(false)}}
+function applyFilters(){const q=text(dom.search.value).toLowerCase(),poly=text(dom.poly.value),active=text(dom.active.value);state.filtered=state.rows.filter(row=>{if(row._new)return true;if(active==="active"&&row.is_active===false)return false;if(active==="inactive"&&row.is_active!==false)return false;if(poly==="yes"&&!row.has_polygon)return false;if(poly==="no"&&row.has_polygon)return false;if(q){const hay=[row.id,row.camp,row.route_code,row.address,row.delivery_location_name,row.delivery_location_address,row.route_tip,row.tonest_memo].map(x=>text(x).toLowerCase()).join(" ");if(!hay.includes(q))return false}return true});render()}
+async function load(force=false){
+  // Never destroy unsaved rows on tab focus or an automatic reload.
+  if(dirtyCount()){
+    if(!force){setStatus("미저장 변경사항을 보호하고 있습니다. 저장하거나 새로고침을 선택하세요.","warn");return}
+    if(!confirm("저장되지 않은 변경 "+dirtyCount()+"건을 버리고 서버에서 다시 불러올까요?"))return;
+  }
+  try{
+    setBusy(true,"라우트 정보 불러오는 중...");
+    const payload=await api("/routes?include_inactive=1");
+    state.rows=(payload.rows||[]).map(normalize);applyFilters();
+    if(payload.maroowellStatus&&payload.maroowellStatus!=="connected"){
+      setStatus(`TO:NEST 로드 완료: ${state.rows.length}건 · 마닷 동기화는 연결 설정 후 별도 실행`,"warn")
+    }else{
+      setStatus(`TO:NEST 로드 완료: ${state.rows.length}건`,"ok")
+    }
+  }catch(e){console.error(e);setStatus(e.message||String(e),"err")}
+  finally{setBusy(false)}
+}
 function addRow(){const row=normalize({camp:"",route_code:"",wave:null,contract_date:null,address:"",delivery_location_name:"",delivery_location_address:"",rates:{"2026":{...RATE_PERIODS["2026"],origin_price:null,fixed_price:null,backup_price:null},"2025":{...RATE_PERIODS["2025"],origin_price:null,fixed_price:null,backup_price:null}},route_tip:"",route_details:[],tonest_memo:"",has_polygon:false,is_active:true});row._new=true;row._dirty=true;state.rows.unshift(row);applyFilters();setStatus("새 라우트 행을 추가했습니다.","warn")}
 function payloadFor(row){ensureRates(row);const r26=row.rates["2026"],r25=row.rates["2025"];return {camp:text(row.camp),route_code:text(row.route_code).toUpperCase(),wave:text(row.wave)||null,contract_date:text(row.contract_date)||null,address:text(row.address)||null,delivery_location_name:text(row.delivery_location_name)||null,delivery_location_address:text(row.delivery_location_address)||null,rates:{"2026":{...RATE_PERIODS["2026"],origin_price:rawMoney(r26.origin_price),fixed_price:rawMoney(r26.fixed_price),backup_price:rawMoney(r26.backup_price)},"2025":{...RATE_PERIODS["2025"],origin_price:rawMoney(r25.origin_price),fixed_price:rawMoney(r25.fixed_price),backup_price:rawMoney(r25.backup_price)}},route_tip:text(row.route_tip)||null,route_details:Array.isArray(row.route_details)?row.route_details:[],tonest_memo:text(row.tonest_memo)||null,is_active:row.is_active!==false}}
-async function saveOne(row){if(!text(row.camp)||!text(row.route_code))throw new Error("캠프와 라우트는 필수입니다.");const body=payloadFor(row);const original=row._original&&!row._new?payloadFor(row._original):null;const waveOnly=original&&Object.keys(body).every(k=>k==="wave"||JSON.stringify(body[k])===JSON.stringify(original[k]));const patch=waveOnly?{wave:body.wave}:body;const payload=row._new?await api("/routes",{method:"POST",body:JSON.stringify(patch)}):await api("/routes/"+row.id,{method:"PATCH",body:JSON.stringify(patch)});const saved=payload?.row||{};Object.assign(row,saved);row._new=false;row._dirty=false;row._key=row.id||row._key;return row}
-async function saveAll(){try{const dirty=state.rows.filter(r=>r._dirty||r._new);if(!dirty.length){setStatus("저장할 변경사항이 없습니다.","warn");return}setBusy(true,"변경사항 저장 중...");for(const row of dirty)await saveOne(row);await load();setStatus("전체 저장 완료 · MAROOWELL에도 반영되었습니다.","ok")}catch(e){console.error(e);setStatus("저장 실패: "+(e.message||String(e)),"err")}finally{setBusy(false)}}
+async function saveOne(row){
+  if(!text(row.camp)||!text(row.route_code))throw new Error("캠프와 라우트는 필수입니다.");
+  const body=payloadFor(row);
+  const original=row._original&&!row._new?payloadFor(row._original):null;
+  const localOnly=original&&Object.keys(body).every(k=>["wave","tonest_memo"].includes(k)||JSON.stringify(body[k])===JSON.stringify(original[k]));
+  const patch=localOnly?{wave:body.wave,tonest_memo:body.tonest_memo}:body;
+  const payload=row._new?await api("/routes",{method:"POST",body:JSON.stringify(patch)}):
+    await api("/routes/"+row.id,{method:"PATCH",body:JSON.stringify(patch)});
+  if(!payload?.row?.id)throw new Error("DB 저장 후 라우트 ID 확인에 실패했습니다.");
+  Object.assign(row,payload.row);row._new=false;row._dirty=false;row._key=row.id;
+  row._original=JSON.parse(JSON.stringify(payload.row));
+  return row;
+}
+async function saveAll(){
+  let saved=0;
+  try{
+    const dirty=state.rows.filter(r=>r._dirty||r._new);
+    if(!dirty.length){setStatus("저장할 변경사항이 없습니다.","warn");return}
+    setBusy(true,"TO:NEST 변경사항 저장 중...");
+    for(const row of dirty){await saveOne(row);saved++}
+    applyFilters();
+    setStatus(`TO:NEST DB 저장 완료: ${saved}건 · 마닷 동기화는 행별 버튼으로 별도 실행`,"ok");
+  }catch(e){
+    console.error(e);applyFilters();
+    setStatus(`저장 ${saved}건 성공, 나머지 미저장 · ${e.message||String(e)}`,"err");
+  }finally{setBusy(false)}
+}
+async function syncOne(row){
+  if(row._new||row._dirty){setStatus("먼저 TO:NEST DB에 저장하세요.","warn");return}
+  if(!confirm(`${row.camp} / ${row.route_code} 라우트를 MAROOWELL DB에 별도로 동기화할까요?`))return;
+  try{
+    setBusy(true,"MAROOWELL 동기화 중...");
+    const reply=await api("/routes/"+row.id+"/sync",{method:"POST"});
+    if(!reply?.maroowell_synced)throw Error("MAROOWELL 연동 확인 실패");
+    Object.assign(row,reply.row||{});row._original=JSON.parse(JSON.stringify(row));
+    applyFilters();setStatus(`${row.camp} / ${row.route_code}: 마닷 동기화 완료`,"ok");
+  }catch(e){console.error(e);setStatus(`투네스트 저장은 유지됩니다 · 마닷 동기화 실패: ${e.message||String(e)}`,"err")}
+  finally{setBusy(false)}
+}
 async function openMapForRow(row){const popup=window.open("about:blank","_blank");try{if(row._new||row._dirty){setStatus(`${text(row.camp)||"신규"} / ${text(row.route_code)||"라우트"} 저장 후 지도 여는 중...`,"warn");await saveOne(row)}const url=mapUrl(row);if(popup){popup.location.href=url}else{window.open(url,"_blank")}setStatus("쿠팡 라우트 지도를 새 창으로 열었습니다.","ok")}catch(e){if(popup&&!popup.closed)popup.close();setStatus("지도 열기 실패: "+(e.message||String(e)),"err")}}
 function showDetails(row){const details=Array.isArray(row.route_details)?row.route_details:[];dom.detailTitle.textContent=`${row.camp||"-"} · ${row.route_code||"-"} 서서브 정보 (${details.length}개)`;if(!details.length){dom.detailBody.innerHTML='<div class="empty">등록된 서서브 정보가 없습니다.</div>'}else{dom.detailBody.innerHTML=`<table class="detailTable"><thead><tr><th>코드</th><th>구역</th><th>설명</th><th>메모</th><th>소분</th></tr></thead><tbody>${details.map(d=>`<tr><td>${esc(d.route_code||[d.sub,d.sub_sub].filter(Boolean).join(""))}</td><td>${esc([d.sub,d.sub_sub].filter(Boolean).join(" / ")||"-")}</td><td>${esc(d.description||"-")}</td><td>${esc(d.memo||"-")}</td><td>${esc(d.sub_package||"-")}</td></tr>`).join("")}</tbody></table>`}dom.modal.classList.add("show")}
 function closeDetails(){dom.modal.classList.remove("show")}
 function exportCsv(){const rows=state.filtered;if(!rows.length){setStatus("내보낼 데이터가 없습니다.","warn");return}const header=["ID","캠프","라우트","주야","계약일","주소","입차지","입차지 주소","26년 원청","26년 고정","26년 백업","25년 원청","25년 고정","25년 백업","라우트 정보","서서브 수","폴리곤","TO:NEST 메모"];const data=rows.map(r=>{ensureRates(r);return[r.id,r.camp,r.route_code,r.wave==="WAVE1"?"야간":r.wave==="WAVE2"?"주간":"미지정",r.contract_date,r.address,r.delivery_location_name,r.delivery_location_address,r.rates["2026"].origin_price,r.rates["2026"].fixed_price,r.rates["2026"].backup_price,r.rates["2025"].origin_price,r.rates["2025"].fixed_price,r.rates["2025"].backup_price,r.route_tip,(r.route_details||[]).length,r.has_polygon?"Y":"N",r.tonest_memo]});const q=v=>{const s=String(v??"");return s.includes(",")||s.includes("\"")||s.includes("\n")||s.includes("\r")?'"'+s.replaceAll('"','""')+'"':s};const csv=[header,...data].map(row=>row.map(q).join(",")).join("\r\n");const blob=new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download="tonest_route_info_"+new Date().toISOString().slice(0,10)+".csv";a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}
 dom.body.addEventListener("input",e=>{const rate=e.target.closest("[data-rate-k]");if(rate){const row=state.rows.find(r=>String(r._key)===String(rate.dataset.rateK));if(!row)return;ensureRates(row);row.rates[rate.dataset.rateYear][rate.dataset.rateField]=rate.value;row._dirty=true;renderPills();return}const el=e.target.closest("[data-k][data-f]");if(!el)return;const row=state.rows.find(r=>String(r._key)===String(el.dataset.k));if(!row)return;mark(row,el.dataset.f,el.value);if(el.tagName==="TEXTAREA"){el.style.height="auto";el.style.height=Math.max(44,el.scrollHeight)+"px"}});
 dom.body.addEventListener("change",e=>{const el=e.target.closest("[data-k][data-f]");if(!el)return;const row=state.rows.find(r=>String(r._key)===String(el.dataset.k));if(!row)return;mark(row,el.dataset.f,el.value)});
-dom.body.addEventListener("click",async e=>{const map=e.target.closest("[data-map]");if(map){const row=state.rows.find(r=>String(r._key)===String(map.dataset.map));if(row)await openMapForRow(row);return}const d=e.target.closest("[data-details]");if(d){const row=state.rows.find(r=>String(r._key)===String(d.dataset.details));if(row)showDetails(row);return}const del=e.target.closest("[data-delete]");if(del){const row=state.rows.find(r=>String(r._key)===String(del.dataset.delete));if(!row)return;if(row._new){state.rows=state.rows.filter(r=>r!==row);applyFilters();return}if(!confirm(`${row.camp} / ${row.route_code} TO:NEST 정보를 비활성 처리할까요?\nMAROOWELL 원본은 삭제하지 않습니다.`))return;try{await api("/routes/"+row.id,{method:"DELETE"});await load()}catch(err){setStatus(err.message||String(err),"err")}}});
-[dom.search,dom.poly,dom.active].forEach(el=>el.addEventListener(el.tagName==="INPUT"?"input":"change",applyFilters));dom.clear.addEventListener("click",()=>{dom.search.value="";dom.poly.value="";dom.active.value="active";applyFilters()});dom.reload.addEventListener("click",load);dom.add.addEventListener("click",addRow);dom.save.addEventListener("click",saveAll);dom.csv.addEventListener("click",exportCsv);dom.detailClose.addEventListener("click",closeDetails);dom.detailClose2.addEventListener("click",closeDetails);dom.modal.addEventListener("click",e=>{if(e.target===dom.modal)closeDetails()});document.addEventListener("keydown",e=>{if(e.key==="Escape")closeDetails()});
-window.addEventListener("focus",()=>{if(state.session&&!state.busy)setTimeout(()=>load(),250)});
+dom.body.addEventListener("click",async e=>{const sync=e.target.closest("[data-sync]");if(sync){const row=state.rows.find(r=>String(r._key)===String(sync.dataset.sync));if(row)await syncOne(row);return}const map=e.target.closest("[data-map]");if(map){const row=state.rows.find(r=>String(r._key)===String(map.dataset.map));if(row)await openMapForRow(row);return}const d=e.target.closest("[data-details]");if(d){const row=state.rows.find(r=>String(r._key)===String(d.dataset.details));if(row)showDetails(row);return}const del=e.target.closest("[data-delete]");if(del){const row=state.rows.find(r=>String(r._key)===String(del.dataset.delete));if(!row)return;if(row._new){state.rows=state.rows.filter(r=>r!==row);applyFilters();return}if(!confirm(`${row.camp} / ${row.route_code} TO:NEST 정보를 비활성 처리할까요?\nMAROOWELL 원본은 삭제하지 않습니다.`))return;try{await api("/routes/"+row.id,{method:"DELETE"});await load()}catch(err){setStatus(err.message||String(err),"err")}}});
+[dom.search,dom.poly,dom.active].forEach(el=>el.addEventListener(el.tagName==="INPUT"?"input":"change",applyFilters));dom.clear.addEventListener("click",()=>{dom.search.value="";dom.poly.value="";dom.active.value="active";applyFilters()});dom.reload.addEventListener("click",()=>load(true));dom.add.addEventListener("click",addRow);dom.save.addEventListener("click",saveAll);dom.csv.addEventListener("click",exportCsv);dom.detailClose.addEventListener("click",closeDetails);dom.detailClose2.addEventListener("click",closeDetails);dom.modal.addEventListener("click",e=>{if(e.target===dom.modal)closeDetails()});document.addEventListener("keydown",e=>{if(e.key==="Escape")closeDetails()});
+window.addEventListener("focus",()=>{if(state.session&&!state.busy&&!dirtyCount())setTimeout(()=>{if(!state.busy&&!dirtyCount())load()},250)});
 try{const ok=await initAuth();if(!ok)return;document.documentElement.style.visibility="visible";await load()}catch(e){console.error(e);document.documentElement.style.visibility="visible";setStatus(e.message||String(e),"err")}
 })();
 </script>

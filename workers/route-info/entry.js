@@ -227,10 +227,14 @@ async function findLocalByRoute(env, camp, routeCode) {
   return Array.isArray(rows) ? rows[0] || null : null;
 }
 async function insertLocal(env, id, record) {
+  const payload = { ...record, updated_at: new Date().toISOString() };
+  // Do not send null/undefined ID. PostgreSQL supplies a collision-free
+  // negative local ID; legacy MAROOWELL IDs remain positive.
+  if (id !== null && id !== undefined) payload.id = id;
   const rows = await tnFetch(env, `/rest/v1/${TABLE}?select=*`, {
     method: "POST",
     headers: { Prefer: "return=representation" },
-    body: JSON.stringify({ id, ...record, updated_at: new Date().toISOString() })
+    body: JSON.stringify(payload)
   });
   return Array.isArray(rows) ? rows[0] || null : rows;
 }
@@ -520,7 +524,7 @@ async function mwReadBusinessInfo(env, id) {
 }
 
 async function enrichHasPolygon(env, rows) {
-  const ids = [...new Set((rows || []).map(r => Number(r.id)).filter(Number.isFinite))];
+  const ids = [...new Set((rows || []).map(r => Number(r.maroowell_subsubroute_id || (r.id > 0 ? r.id : null))).filter(v=>Number.isInteger(v)&&v>0))];
   if (!ids.length) return rows || [];
   const p = new URLSearchParams();
   p.set("select", "id,polygon_wgs84,camp,full_code,code,delivery_location_name,delivery_location_address,is_active");
@@ -528,7 +532,8 @@ async function enrichHasPolygon(env, rows) {
   const mwRows = await mwFetch(env, "/rest/v1/" + MW_ROUTE_TABLE + "?" + p.toString(), { method: "GET" });
   const byId = new Map((Array.isArray(mwRows) ? mwRows : []).map(r => [Number(r.id), r]));
   for (const row of rows || []) {
-    const mw = byId.get(Number(row.id));
+    const linkedId = Number(row.maroowell_subsubroute_id || (row.id > 0 ? row.id : null));
+    const mw = linkedId > 0 ? byId.get(linkedId) : null;
     row.has_polygon = Boolean(mw?.polygon_wgs84);
     row.maroowell_exists = Boolean(mw);
   }
@@ -572,23 +577,27 @@ async function listRoutes(request, env, url) {
   return json(request, { rows, count: rows.length, maroowellStatus });
 }
 
+function requiresMaroowellSync(current, record) {
+  if (!current) return true;
+  // wave and tonest_memo are TO:NEST-only fields; do not rewrite MAROOWELL.
+  return ["camp","route_code","contract_date","address","delivery_location_name",
+    "delivery_location_address","rates","route_tip","route_details","is_active"]
+    .some(field => JSON.stringify(current[field] ?? null) !== JSON.stringify(record[field] ?? null));
+}
 async function createRoute(request, env) {
   await requireUser(request, env, true);
   const body = await readJson(request);
   const record = localPayload(body, null);
   if (!record.camp || !record.route_code) throw httpError(400, "캠프와 라우트는 필수입니다.");
-
-  const mwRoute = await mwEnsureRoute(env, record);
-  const id = Number(mwRoute.id);
-  let current = await findLocal(env, id);
-  if (!current) current = await findLocalByRoute(env, record.camp, record.route_code);
-
-  const saved = current ? await patchLocal(env, current.id, record) : await insertLocal(env, id, record);
-  await pushAllToMaroowell(env, id, record, false);
-  const out = { ...(saved || {}), id, has_polygon: Boolean(mwRoute.polygon_wgs84), maroowell_exists: true };
-  return json(request, { row: out, reused: Boolean(current) }, current ? 200 : 201);
+  const existing = await findLocalByRoute(env, record.camp, record.route_code);
+  if (existing) throw httpError(409, "이미 등록된 캠프/라우트입니다. 기존 행을 수정해 주세요.");
+  const saved = await insertLocal(env, null, {
+    ...record, maroowell_sync_status: "pending", maroowell_sync_error: null
+  });
+  if (!saved?.id) throw httpError(500, "TO:NEST DB에서 새 라우트 ID를 발급하지 못했습니다.");
+  return json(request, { row:{...saved,has_polygon:false,maroowell_exists:false},
+    local_saved:true,maroowell_synced:false,sync_pending:true },201);
 }
-
 async function updateRoute(request, env, id) {
   await requireUser(request, env, true);
   const current = await findLocal(env, id);
@@ -596,16 +605,53 @@ async function updateRoute(request, env, id) {
   const body = await readJson(request);
   const record = localPayload(body, current);
   if (!record.camp || !record.route_code) throw httpError(400, "캠프와 라우트는 필수입니다.");
-
-  // Changing TO:NEST's schedule classification alone must not replay all
-  // MAROOWELL rates, route details and night-vendor metadata.
-  const waveOnlyChange=hasOwn(body,"wave")&&Object.keys(body||{}).every(key=>key==="wave");
-  if(!waveOnlyChange)await pushAllToMaroowell(env,id,record,true);
-  const saved = await patchLocal(env, id, waveOnlyChange?{wave:record.wave}:record);
-  // A wave-only edit is local scheduling metadata; it must work without
-  // MAROOWELL credentials or writes, and preserve other route fields.
-  const mw = waveOnlyChange ? null : await mwRouteById(env, id);
-  return json(request, { row: { ...(saved || {}), has_polygon: waveOnlyChange ? null : Boolean(mw?.polygon_wgs84), maroowell_exists: waveOnlyChange ? null : Boolean(mw) }, maroowell_synced: !waveOnlyChange });
+  const localOnlyFields = ["wave","tonest_memo"];
+  const localOnlyChange = Object.keys(body || {}).length > 0 &&
+    Object.keys(body || {}).every(field=>localOnlyFields.includes(field));
+  const externalChange = !localOnlyChange && requiresMaroowellSync(current, record);
+  // No accidental overwrites of unrelated columns when updating just wave/memo.
+  const patch = localOnlyChange
+    ? { ...(hasOwn(body,"wave")?{wave:record.wave}:{}),
+        ...(hasOwn(body,"tonest_memo")?{tonest_memo:record.tonest_memo}:{}) }
+    : { ...record,
+        ...(externalChange?{maroowell_sync_status:"pending",maroowell_sync_error:null}:{}) };
+  const saved = await patchLocal(env, id, patch);
+  if (!saved) throw httpError(409, "저장 대상이 없어졌습니다. 새로고침 후 다시 확인하세요.");
+  return json(request, { row:saved, local_saved:true,
+    maroowell_synced:saved.maroowell_sync_status==="synced",
+    sync_pending:saved.maroowell_sync_status!=="synced" });
+}
+// Explicit MAROOWELL sync is separate from local persistence. An upstream
+// failure never deletes/rolls back a successfully saved TO:NEST route.
+async function syncRoute(request, env, id) {
+  await requireUser(request, env, true);
+  const current = await findLocal(env, id);
+  if (!current) throw httpError(404, "라우트 정보를 찾을 수 없습니다.");
+  if (!mwBase(env) || !mwKey(env)) throw httpError(503,
+    "투네스트 DB에는 저장되었습니다. MAROOWELL 연동 설정이 없어 동기화는 보류됩니다.");
+  let linked = Number(current.maroowell_subsubroute_id || (id>0?id:null));
+  try {
+    if (!linked || linked <= 0) {
+      const created=await mwEnsureRoute(env,current);
+      linked=Number(created?.id);
+      if (!Number.isInteger(linked) || linked<=0) throw httpError(500,"MAROOWELL 라우트 ID가 유효하지 않습니다.");
+      // Persist the external ID immediately so retries never create duplicates.
+      await patchLocal(env,id,{maroowell_subsubroute_id:linked,maroowell_sync_status:"pending"});
+    }
+    await pushAllToMaroowell(env,linked,current,true);
+    const saved=await patchLocal(env,id,{
+      maroowell_subsubroute_id:linked,
+      maroowell_sync_status:"synced",maroowell_sync_error:null
+    });
+    return json(request,{row:saved,local_saved:true,maroowell_synced:true});
+  }catch(error){
+    const message=String(error?.message || error).slice(0,400);
+    try { await patchLocal(env,id,{
+      ...(Number.isInteger(linked)&&linked>0?{maroowell_subsubroute_id:linked}:{}),
+      maroowell_sync_status:"error",maroowell_sync_error:message
+    }); }catch(patchError){ console.error("Route sync failure recording failed",patchError); }
+    throw httpError(error?.status||502,"투네스트 저장은 유지됩니다. MAROOWELL 동기화 실패: "+message);
+  }
 }
 
 async function softDeleteRoute(request, env, id) {
@@ -631,6 +677,7 @@ async function fromMap(request, env) {
   const mwInfo = await mwReadBusinessInfo(env, id);
   if (!mwInfo) throw httpError(404, "MAROOWELL 라우트를 찾을 수 없습니다.");
   let existing = await findLocal(env, id);
+  if (!existing) existing = await findLocalByRoute(env,mwInfo.camp,mwInfo.route_code);
 
   // 지도에서 먼저 만든 경우: 야간 벤더가 TO:NEST일 때만 자동 등록.
   if (!existing && !isTonestNightVendor(mwInfo.night_vendor_name)) {
@@ -644,7 +691,9 @@ async function fromMap(request, env) {
 
   const baseRecord = localPayload(mwInfo, existing);
   if(!existing&&!baseRecord.wave)baseRecord.wave="WAVE1";
-  const saved = existing ? await patchLocal(env, id, baseRecord) : await insertLocal(env, id, baseRecord);
+  const saved = existing
+    ? await patchLocal(env, existing.id, {...baseRecord,maroowell_subsubroute_id:id,maroowell_sync_status:"synced",maroowell_sync_error:null})
+    : await insertLocal(env,id,{...baseRecord,maroowell_subsubroute_id:id,maroowell_sync_status:"synced",maroowell_sync_error:null});
   return json(request, { ok: true, created: !existing, row: { ...(saved || {}), has_polygon: mwInfo.has_polygon, maroowell_exists: true } });
 }
 
@@ -683,16 +732,18 @@ export default {
         if (request.method === "POST") return await createRoute(request, env);
         return json(request, { error: "Method Not Allowed" }, 405);
       }
-      const match = path.match(/^\/routes\/(\d+)$/);
+      const match = path.match(/^\/routes\/(-?\d+)$/);
       if (match) {
         if (request.method === "PATCH") return await updateRoute(request, env, Number(match[1]));
         if (request.method === "DELETE") return await softDeleteRoute(request, env, Number(match[1]));
         return json(request, { error: "Method Not Allowed" }, 405);
       }
+      const syncMatch = path.match(/^\/routes\/(-?\d+)\/sync$/);
+      if (syncMatch && request.method === "POST") return await syncRoute(request,env,Number(syncMatch[1]));
       if (path === "/from-map" && request.method === "POST") return await fromMap(request, env);
       if ((path === "/sync" || path === "/sync-one") && request.method === "POST") {
         await requireUser(request, env, true);
-        return json(request, { ok: true, disabled: true, message: "동기화 버튼은 사용하지 않습니다. 저장 시 자동 연동됩니다." });
+        return json(request, { ok: true, disabled: true, message: "동기화하려는 라우트의 /routes/{id}/sync API를 이용하세요." });
       }
       return json(request, { error: "Not Found" }, 404);
     } catch (error) {

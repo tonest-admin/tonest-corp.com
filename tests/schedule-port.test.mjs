@@ -201,7 +201,7 @@ test('route information UI includes wave dropdown and keeps wave-only PATCH',()=
  assert(front.includes('미지정'));
  assert(front.includes('WAVE1'));
  assert(front.includes('WAVE2'));
- assert(front.includes('const patch=waveOnly?{wave:body.wave}:body'));
+ assert(front.includes('const patch=localOnly?{wave:body.wave,tonest_memo:body.tonest_memo}:body'));
  for(const match of front.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)){
   if(match[1].trim())new vm.Script(match[1]);
  }
