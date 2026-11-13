@@ -6,6 +6,7 @@ on:
       - 'workers/route-info/**'
       - 'workers/schedule-api/**'
       - 'tests/schedule-port.test.mjs'
+      - 'tests/schedule-meta-sample.test.mjs'
       - 'tests/route-info-auth.test.mjs'
       - '.github/workflows/deploy-route-info.yml'
   workflow_dispatch:
@@ -28,7 +29,7 @@ jobs:
       - name: Test auth errors, CORS and route handlers
         run: node --test tests/route-info-auth.test.mjs
       - name: Verify source-ported schedule and META adapters
-        run: node --test tests/schedule-port.test.mjs
+        run: node --test tests/schedule-port.test.mjs tests/schedule-meta-sample.test.mjs
       - name: Deploy route-info Worker keeping existing secrets
         uses: cloudflare/wrangler-action@v3
         with:

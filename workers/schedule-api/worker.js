@@ -206,7 +206,8 @@ export default {
         if (phase === "reset") {
           return json({ok:currentIds.size===0,verified:currentIds.size===0,remaining:currentIds.size},200,cors);
         }
-        const expected = preview.actual_rows;
+        // Off-duty people are uploaded to META but must not appear in active registrations.
+        const expected = preview.actual_rows.filter(r=>r.status!=="휴무");
         const present = expected.filter(r=>currentIds.has(nativeMetaKey(r.id)));
         const complete = present.length===expected.length;
         if (complete) {
@@ -1723,42 +1724,65 @@ function nativeMetaScheduleRows(schedules,routes,infoRows,date,metaDate){
     const parent=nativeMetaNormalizeRoute(r.parent_route_label||[r.route,r.sub].join(""));
     if(label)routeMap.set(label,parent||label);
   }
-  const assignments=(schedules||[]).filter(r=>
-    r.is_active!==false && clean(r.schedule_date)===date &&
-    nativeMetaNormalizeRoute(r.route_label)!=="휴무자" &&
-    !!clean(r.driver_display_name||r.driver_name)
+  const relevant=(schedules||[]).filter(r=>
+    r.is_active!==false && !!clean(r.driver_display_name||r.driver_name)
   );
-  const assignedLabels=new Set(assignments.map(r=>nativeMetaNormalizeRoute(r.route_label)));
-  const grouped=new Map();
-  const unresolved=[];
-  for(const r of assignments){
-    const label=nativeMetaNormalizeRoute(r.route_label);
-    const adminRoute=routeMap.get(label)||label;
-    if(!adminRoute)continue;
-    // Web schedule parent assignment takes priority over a child assignment.
-    if(adminRoute!==label && assignedLabels.has(adminRoute))continue;
-    const display=clean(r.driver_display_name||r.driver_name);
-    const direct=nativeMetaAccountParts(r.driver_coupang_id,clean(r.driver_export_name||display));
-    let account=index.get(nativeMetaKey(display)) || index.get(nativeMetaKey(r.driver_export_name));
+  const assignedLabels=new Set(relevant.filter(r=>
+    clean(r.schedule_date)===date && nativeMetaNormalizeRoute(r.route_label)!=="휴무자"
+  ).map(r=>nativeMetaNormalizeRoute(r.route_label)));
+  const roster=new Map(),byDate=new Map(),unresolved=[];
+  function resolveIdentity(row,display,allowDirect){
+    const direct=nativeMetaAccountParts(allowDirect?row.driver_coupang_id:"",clean(row.driver_export_name||display));
+    const account=index.get(nativeMetaKey(display))||(allowDirect?index.get(nativeMetaKey(row.driver_export_name)):null);
     const numbered=/^(.+?)(\d+)$/.exec(display);
-    if(numbered && Number(numbered[2])>=2 && !account && !direct.id){
-      unresolved.push(display);continue;
+    if(numbered&&Number(numbered[2])>=2&&!account&&!direct.id){
+      unresolved.push(display);return null;
     }
     const id=clean(account?.id||direct.id);
-    const name=clean(account?.name||r.driver_export_name||direct.name||display);
-    if(!id || !name){unresolved.push(display);continue;}
-    const key=[metaDate,nativeMetaKey(id)].join("|");
-    if(!grouped.has(key))grouped.set(key,{date:metaDate,name,id,routes:[]});
-    const out=grouped.get(key);
-    if(!out.routes.includes(adminRoute))out.routes.push(adminRoute);
+    const name=clean(account?.name||(allowDirect?row.driver_export_name:"")||direct.name||display);
+    if(!id||!name){unresolved.push(display);return null;}
+    return {id,name,key:nativeMetaKey(id)};
+  }
+  for(const row of relevant){
+    const label=nativeMetaNormalizeRoute(row.route_label);
+    const isOff=label==="휴무자";
+    const display=clean(row.driver_display_name||row.driver_name);
+    const people=isOff?display.split(/[,\n/、，]+/).map(clean).filter(Boolean):[display];
+    for(const person of people){
+      // A shared off-duty cell has no single driver ID; resolve each name independently.
+      const identity=resolveIdentity(row,person,!isOff||people.length===1);
+      if(!identity)continue;
+      if(!roster.has(identity.key))roster.set(identity.key,identity);
+      if(clean(row.schedule_date)!==date)continue;
+      const adminRoute=isOff?"":(routeMap.get(label)||label);
+      if(!isOff&&!adminRoute)continue;
+      // Preserve the original parent-over-child assignment precedence.
+      if(!isOff&&adminRoute!==label&&assignedLabels.has(adminRoute))continue;
+      const existing=byDate.get(identity.key);
+      const status=isOff?"휴무":"출근";
+      if(existing&&existing.status!==status){
+        throw httpError(422,"meta_attendance_off_conflict",{name:identity.name,date});
+      }
+      if(!existing){
+        byDate.set(identity.key,{date:metaDate,name:identity.name,id:identity.id,status,routes:isOff?[]:[adminRoute]});
+      }else if(!isOff&&!existing.routes.includes(adminRoute)){
+        existing.routes.push(adminRoute);
+      }
+    }
   }
   if(unresolved.length)throw httpError(422,"meta_account_mapping_required",{names:[...new Set(unresolved)]});
-  return [...grouped.values()].map(r=>({...r,routes:r.routes.sort()})).sort((a,b)=>a.name.localeCompare(b.name,"ko"));
+  // Week roster appears once per selected business day, including implicit rest days.
+  return [...roster].map(([key,person])=>{
+    const found=byDate.get(key);
+    return found?{...found,routes:found.status==="휴무"?[]:found.routes.sort()}
+      :{date:metaDate,name:person.name,id:person.id,status:"휴무",routes:[]};
+  }).sort((a,b)=>a.name.localeCompare(b.name,"ko")||a.id.localeCompare(b.id,"en"));
 }
 async function prepareNativeMetaTransfer(env,{camp,wave,date}){
-  const metaDate=wave==="WAVE1"?addDays(date,1):date;
+  const metaDate=date; // Match supplied TO:NEST business date sample.
+  const week=metaWeekRange(date);
   const [schedules,routes,accounts,current]=await Promise.all([
-    selectSchedules(env,{camp,wave,weekStart:date,weekEnd:date}),
+    selectSchedules(env,{camp,wave,weekStart:week.dateFrom,weekEnd:week.dateTo}),
     selectRoutes(env,camp,wave),
     selectInfoAccounts(env),
     getMetaCurrentSchedule(env,{camp,wave,date:metaDate})
@@ -1780,7 +1804,7 @@ async function prepareNativeMetaTransfer(env,{camp,wave,date}){
 }
 
 // Builds a standards-compliant, uncompressed XLSX ZIP. The MetaAdmin importer
-// expects Excel date serials (A), numeric business registration (C), text elsewhere.
+// expects Excel date serials (A), text business number (C), and text elsewhere.
 function nativeMetaXml(value) {
   return String(value??"").replace(/&/g,"&amp;").replace(/</g,"&lt;")
     .replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&apos;");
@@ -1824,8 +1848,8 @@ function buildNativeMetaXlsx(rows,{camp,wave,phase}){
   const isOff=phase==="reset",status=isOff?"휴무":"출근";
   const rotation=wave==="WAVE1"?"D1,D2,F3":"1회전,2회전";
   const aoa=[headers,...rows.map(r=>[
-    r.date,"주식회사 투네스트",1658803281,campName,wave,r.name,r.id,status,
-    isOff?"":rotation,isOff?"":r.routes.join(",")
+    r.date,"주식회사 투네스트/TONET","1658803281",campName,wave,r.name,r.id,r.status==="휴무"?"휴무":status,
+    (isOff||r.status==="휴무")?"":rotation,(isOff||r.status==="휴무")?"":r.routes.join(",")
   ])];
   const rowXml=aoa.map((row,ridx)=>`<row r="${ridx+1}">`+row.map((v,cidx)=>{
     if(v===""||v==null)return "";
@@ -1835,7 +1859,7 @@ function buildNativeMetaXlsx(rows,{camp,wave,phase}){
       const serial=Math.round((time-Date.UTC(1899,11,30))/86400000);
       return `<c r="${ref}" s="1"><v>${serial}</v></c>`;
     }
-    if(ridx>0&&cidx===2)return `<c r="${ref}"><v>${Number(v)}</v></c>`;
+    // Business registration number is text, matching the real template.
     return `<c r="${ref}" t="inlineStr"><is><t xml:space="preserve">${nativeMetaXml(v)}</t></is></c>`;
   }).join("")+"</row>").join("");
   const ns="http://schemas.openxmlformats.org/spreadsheetml/2006/main";
@@ -1844,7 +1868,7 @@ function buildNativeMetaXlsx(rows,{camp,wave,phase}){
     "_rels/.rels":'<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>',
     "xl/workbook.xml":`<?xml version="1.0" encoding="UTF-8"?><workbook xmlns="${ns}" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Sheet0" sheetId="1" r:id="rId1"/></sheets></workbook>`,
     "xl/_rels/workbook.xml.rels":'<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>',
-    "xl/styles.xml":`<?xml version="1.0" encoding="UTF-8"?><styleSheet xmlns="${ns}"><fonts count="1"><font><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="14" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs></styleSheet>`,
+    "xl/styles.xml":`<?xml version="1.0" encoding="UTF-8"?><styleSheet xmlns="${ns}"><numFmts count="1"><numFmt numFmtId="164" formatCode="mm-dd-yy"/></numFmts><fonts count="1"><font><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs></styleSheet>`,
     "xl/worksheets/sheet1.xml":`<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="${ns}"><dimension ref="A1:J${aoa.length}"/><sheetData>${rowXml}</sheetData><autoFilter ref="A1:J${aoa.length}"/></worksheet>`
   };
   return nativeMetaZip(files);

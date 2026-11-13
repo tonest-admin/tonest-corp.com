@@ -1314,8 +1314,8 @@
       const LOGIN_PATH = CONFIG.PATHS?.login || "/";
       const SCHEDULE_API_BASE = String(CONFIG.SCHEDULE_API_BASE || CONFIG.SCHEDULE_API_URL || "https://route-info.tonest-admin.workers.dev/schedule-api").replace(/\/+$/,"");
 
-      const META_VENDOR_NAME = CONFIG.METAADMIN_VENDOR_NAME || "주식회사 투네스트";
-      const META_BUSINESS_NO = CONFIG.METAADMIN_BUSINESS_NO || "1658803281";
+      const META_VENDOR_NAME = "주식회사 투네스트/TONET";
+      const META_BUSINESS_NO = "1658803281";
       const META_WORK_STATUS = CONFIG.METAADMIN_WORK_STATUS || "출근";
       const OFF_ROUTE_LABEL = "휴무자";
 
@@ -2171,6 +2171,10 @@
             const value=valueForCell(date,normalizedRoute);
             if(!value) continue;
             metaNameCandidates(value).forEach(name=>names.push(name));
+          }
+          // Off-duty names also require a Coupang ID before export.
+          for(const offName of splitPersonNames(valueForCell(date,OFF_ROUTE_LABEL))){
+            metaNameCandidates(offName).forEach(name=>names.push(name));
           }
         }
         return Array.from(new Set(names.map(clean).filter(Boolean)));
@@ -3881,19 +3885,14 @@
 
           const serial=excelDateSerial(aValue);
           if(serial){
-            ws[a]={t:"n",v:serial,z:"yy-mm-dd"};
+            ws[a]={t:"n",v:serial,z:"mm-dd-yy"};
           }
 
-          const businessNo=Number(cValue);
-          if(Number.isFinite(businessNo)){
-            ws[c]={t:"n",v:businessNo,z:"General"};
-          }
+          ws[c]={t:"s",v:cValue,z:"General"};
 
           for(const col of ["B","D","E","F","G","H","I","J"]){
             const addr=`${col}${r}`;
-            if(ws[addr]){
-              ws[addr]={t:"s",v:clean(ws[addr].v)};
-            }
+            ws[addr]={t:"s",v:clean(ws[addr]?.v)};
           }
         }
 
@@ -3932,7 +3931,7 @@
             const adminRoute=adminRouteLabel(normalizedRoute);
             if(!adminRoute)continue;
 
-            const exportDate=normalizeWave(state.wave)==="WAVE1" ? addDays(date,1) : date;
+            const exportDate=date; // Match the supplied META business-date sample.
             const groupKey=[exportDate,exportName,exportId].join("||");
 
             if(!grouped.has(groupKey)){
@@ -3961,6 +3960,49 @@
         });
       }
 
+      // Reproduce the actual TO:NEST META XLSX: one attendance row per
+      // person and business date, including explicitly or implicitly off days.
+      function collectMetaSampleRows(options={}){
+        const strict=options.validateIds!==false;
+        const dates=Array.from(new Set((options.scheduleDates||state.weekDates||[])
+          .map(normalizeDateInput).filter(d=>d&&state.weekDates.includes(d)))).sort();
+        const roster=new Map(),daily=new Map();
+        for(const date of state.weekDates||[]){
+          const working=collectMetaRows({scheduleDate:date}).map(row=>({...row,status:"출근"}));
+          const offNames=splitPersonNames(valueForCell(date,OFF_ROUTE_LABEL));
+          const off=offNames.map(name=>{
+            // A multi-name off-duty cell cannot lend the first person's stored ID to everyone.
+            const src=offNames.length===1?(rowForCell(date,OFF_ROUTE_LABEL)||{}):{};
+            const identity=resolveMetaAdminExportIdentity(name,src);
+            return {date,name:identity.name,id:identity.id,routes:[],status:"휴무"};
+          });
+          const seen=new Map();
+          for(const row of [...working,...off]){
+            const id=clean(row.id);
+            if(!id&&strict)throw new Error("META 기사 ID 확인 불가: "+date+" / "+row.name);
+            const key=id?"id:"+keyOf(id):"name:"+keyOf(row.name);
+            const old=seen.get(key);
+            if(old&&old.status!==row.status){
+              if(strict)throw new Error("출근·휴무 중복: "+date+" / "+row.name);
+              if(row.status==="출근")seen.set(key,row);
+            }else if(old&&row.status==="출근"){
+              seen.set(key,{...row,routes:Array.from(new Set([...(old.routes||[]),...(row.routes||[])]))});
+            }else if(!old)seen.set(key,row);
+            if(!roster.has(key))roster.set(key,{name:clean(row.name),id});
+          }
+          daily.set(date,seen);
+        }
+        const result=[];
+        for(const date of dates){
+          const recorded=daily.get(date)||new Map();
+          for(const [key,person] of roster){
+            const row=recorded.get(key);
+            result.push(row?{...row,date,routes:row.status==="휴무"?[]:row.routes||[]}
+              :{date,name:person.name,id:person.id,status:"휴무",routes:[]});
+          }
+        }
+        return result.sort((a,b)=>a.date.localeCompare(b.date)||sortText(a.name,b.name)||sortText(a.id,b.id));
+      }
       function closeExcelDatePicker(){
         if(!els.excelDateModal)return;
         els.excelDateModal.classList.remove("open");
@@ -3996,7 +4038,7 @@
         els.excelDateList.innerHTML=dates.map(date=>{
           const pddDate=pddDateForScheduleDate(date);
           const count=countMetaRowsForScheduleDate(date);
-          const pddText=normalizeWave(state.wave)==="WAVE1" ? `PDD ${mdLabel(pddDate)}` : `업무일 ${mdLabel(pddDate)}`;
+          const pddText=`업무일 ${mdLabel(date)}`;
           return `
             <button class="excelDateOption" type="button" data-date="${esc(date)}" aria-pressed="false">
               ${esc(dateLabel(date))}
@@ -4020,8 +4062,8 @@
       }
 
       function countMetaRowsForScheduleDate(scheduleDate){
-        const rows=collectMetaRows({scheduleDate});
-        return rows.length;
+        // Date-picker preview remains usable before the server-side ID lookup completes.
+        return collectMetaSampleRows({scheduleDates:[scheduleDate],validateIds:false}).length;
       }
 
       async function exportMetaExcel(){
@@ -4072,14 +4114,14 @@
           ...rows.map(r=>[
             r.date,
             META_VENDOR_NAME,
-            Number(META_BUSINESS_NO),
+            String(META_BUSINESS_NO),
             metaCampName(state.camp),
             state.wave,
             r.name,
             r.id,
-            META_WORK_STATUS,
-            metaRotationByWave(state.wave),
-            r.routes.join(",")
+            (r.status==="휴무"?"휴무":"출근"),
+            r.status==="휴무"?"":metaRotationByWave(state.wave),
+            r.status==="휴무"?"":(r.routes||[]).join(",")
           ])
         ];
 
@@ -4087,7 +4129,7 @@
         const ws=XLSX.utils.aoa_to_sheet(aoa);
 
         // CLS Quickflex Admin 업로드 양식과 동일하게 주요 컬럼 타입을 강제한다.
-        // A열 업무일: 날짜 serial number + yy-mm-dd 표시 / C열 사업자등록번호: 숫자 타입 / 나머지: 문자열 타입
+        // A열 업무일: 날짜 serial + mm-dd-yy / C열 사업자등록번호: 문자열 / 나머지: 문자열
         forceMetaAdminCellTypes(ws,aoa.length);
 
         ws["!cols"]=[{wch:12},{wch:14},{wch:16},{wch:12},{wch:10},{wch:12},{wch:18},{wch:10},{wch:16},{wch:34}];
@@ -4137,7 +4179,7 @@
         const allRows=[];
 
         for(const selectedDate of selectedDates){
-          const rows=collectMetaRows({scheduleDate:selectedDate});
+          const rows=collectMetaSampleRows({scheduleDates:[selectedDate]});
 
           if(!rows.length){
             skipped.push(dateLabel(selectedDate));
@@ -4229,7 +4271,7 @@
 
       function metaUploadDateForScheduleDate(scheduleDate){
         const date=normalizeDateInput(scheduleDate);
-        return normalizeWave(state.wave)==="WAVE1"?addDays(date,1):date;
+        return date; // WAVE1 sample uses the selected business date.
       }
 
       function metaResetRowsFromCurrent(current,metaDate){
@@ -4259,14 +4301,14 @@
           ...(rows||[]).map(r=>[
             r.date,
             META_VENDOR_NAME,
-            Number(META_BUSINESS_NO),
+            String(META_BUSINESS_NO),
             metaCampName(state.camp),
             state.wave,
             r.name,
             r.id,
-            status,
-            isOff?"":metaRotationByWave(state.wave),
-            isOff?"":(r.routes||[]).join(",")
+            (r.status==="휴무"?"휴무":status),
+            (r.status==="휴무"||isOff)?"":metaRotationByWave(state.wave),
+            (r.status==="휴무"||isOff)?"":(r.routes||[]).join(",")
           ])
         ];
         const wb=XLSX.utils.book_new();
@@ -4417,7 +4459,9 @@
           }
           await ensureGlobalInfoAccountsForNames(metaDisplayNamesOnBoard());
 
-          const actualRows=collectMetaRows({scheduleDate:selectedDate});
+          const actualRows=collectMetaSampleRows({scheduleDates:[selectedDate]});
+          const workingRows=actualRows.filter(r=>r.status==="출근");
+          const offRows=actualRows.filter(r=>r.status==="휴무");
 
           const metaDate=metaUploadDateForScheduleDate(selectedDate);
           const current=await apiFetch("/schedule/meta/current?"+new URLSearchParams({
@@ -4439,7 +4483,7 @@
               ? `메타어드민 기존 등록 ${resetRows.length}명을 전부 휴무 처리합니다.\n\n휴무 처리: ${resetRows.map(r=>r.name).join(", ")}\n`
               : `메타어드민 기존 등록자는 없습니다.\n`)+
             (actualRows.length
-              ? `그 다음 현재 스케줄 ${actualRows.length}명을 출근으로 다시 등록합니다.\n`
+              ? `그 다음 현재 스케줄 ${workingRows.length}명 출근 / ${offRows.length}명 휴무로 등록합니다.\n`
               : `현재 투네스트 출근자는 0명이므로 휴무 처리 후 추가 등록 없이 완료합니다.\n`)+
             `\n계속할까요?`
           );
@@ -4494,14 +4538,14 @@
             camp:state.camp,
             wave:state.wave,
             metaDate,
-            rows:actualRows
+            rows:workingRows
           });
 
           await advanceActualUpdateDate(metaDate);
           const summary=metaWorkflowSummary(actualResult);
-          setStatus(`메타어드민 전송 완료: 기존 ${resetRows.length}명 정리 / 신규 ${actualRows.length}명 / ${summary}`);
+          setStatus(`메타어드민 전송 완료: 기존 ${resetRows.length}명 정리 / 출근 ${workingRows.length}명 · 휴무 ${offRows.length}명 / ${summary}`);
           if(!batch)alert(`메타어드민 전송이 완료되었습니다.\n\n${state.camp} / ${waveLabel(state.wave)} / ${dateLabel(selectedDate)}\n기존 등록 휴무 처리: ${resetRows.length}명\n신규 스케줄: ${actualRows.length}명\n\n${summary}`);
-          return {selectedDate,metaDate,resetCount:resetRows.length,actualCount:actualRows.length,summary};
+          return {selectedDate,metaDate,resetCount:resetRows.length,actualCount:workingRows.length,offCount:offRows.length,summary};
         }catch(e){
           console.error("[meta upload]",e);
           setStatus(`메타어드민 전송 실패: ${e?.message||e}`);
@@ -4535,7 +4579,7 @@
         const preview=dates.map(date=>{
           const metaDate=metaUploadDateForScheduleDate(date);
           const count=countMetaRowsForScheduleDate(date);
-          return `${dateLabel(date)} · Meta ${mdLabel(metaDate)} · 출근 ${count}명`;
+          return `${dateLabel(date)} · 업무일 ${mdLabel(metaDate)} · ${count}행(출근·휴무 포함)`;
         }).join("\n");
 
         const ok=confirm(
